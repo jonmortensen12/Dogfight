@@ -82,7 +82,7 @@ async function play(from){
 async function screen_lock(){ try { await screen.orientation.lock('landscape'); } catch(e){} }
 function go(){
   state = 'play'; screen(null); controls(true);
-  hud.show(sim.mode === 'rail' ? 'RED CANYON' : 'THE CLEARING', sim.mode === 'rail' ? 'Follow the canyon · tilt to steer · hold FIRE' : '', 2.6);
+  hud.show(sim.mode === 'rail' ? 'RED CANYON' : 'THE CLEARING', sim.mode === 'rail' ? 'Point the phone to steer · tap FIRE · hold it to charge' : '', 2.6);
   snd.cue('count');
 }
 function pause(){ if(state !== 'play') return; state = 'pause'; screen('pause'); controls(false); }
@@ -133,20 +133,23 @@ function react(events){
       case 'fire': if(performance.now() - lastFire > 70){ snd.sfx('laser', {x: p.x, y: p.y, z: p.z}, e.twin ? 1.2 : 1); lastFire = performance.now(); } break;
       case 'enemyShot': snd.sfx('enemyShot', at, 0.8); break;
       case 'hit': snd.sfx('hit', at); break;
-      case 'deflect': snd.sfx('hit', at, 1.2, 1.5); break;
+      case 'deflect': snd.sfx('hit', at, 1.2, 1.5); hud.deflectT = 0.9; break;
       case 'boom': snd.sfx(e.big ? 'bigBoom' : 'boom', at); break;
       case 'bomb': snd.sfx('bigBoom', at, 0.8); break;
       case 'hurt': snd.sfx('hull', null, e.why === 'crash' ? 0.7 : 0.5); hud.hurt = Math.min(1.2, hud.hurt + 0.6); if(navigator.vibrate) navigator.vibrate(e.why === 'crash' ? 70 : 35); break;
       case 'lock': snd.sfx('lock'); break;
+      case 'charged': snd.sfx('pickup', null, 0.5); break;
+      case 'chargeShot': snd.sfx('missile', {x: p.x, y: p.y, z: p.z}, 1.2); snd.sfx('laser', {x: p.x, y: p.y, z: p.z}, 1.6); break;
+      case 'burst': snd.sfx('boom', at, 0.9); break;
       case 'missile': snd.sfx('missile', {x: p.x, y: p.y, z: p.z}); break;
       case 'torpedo': snd.sfx('torpedo', at); break;
       case 'pickup': snd.sfx('pickup'); break;
       case 'shieldDown': snd.sfx('shieldDown', at); break;
-      case 'roll': case 'uturn': snd.sfx('whoosh', {x: p.x, y: p.y, z: p.z}); break;
+      case 'roll': case 'uturn': case 'loop': snd.sfx('whoosh', {x: p.x, y: p.y, z: p.z}); break;
       case 'say': hud.say(e.who, e.text, e.dur); break;
       case 'free':
         document.body.classList.add('free');
-        hud.show('FREE FLIGHT', sim.style === 'level' ? 'Tilt to bank and turn · U-TURN to come about · TARGET to watch a foe' : 'Full 3D: tilt to roll, tip to pull · U-TURN loops you back', 3.2);
+        hud.show('FREE FLIGHT', sim.style === 'level' ? 'Point the phone to turn · LOOP gets behind a tailgater · U-TURN to come about' : 'Full 3D: point the phone to turn, wheel it to roll · LOOP · U-TURN', 3.2);
         snd.cue('wave');
         break;
       case 'bosswarn': snd.cue('bosswarn'); break;
@@ -174,7 +177,7 @@ function frame(now){
     if(inp.centre){ input.centre(); hud.show('Tilt centred', '', 1); }
     if(AUTO) inp = Object.assign(autopilot(sim, 0.85), {target: false});
     if(inp.target){
-      const lock = sim.p.lock || sim.p.cand;
+      const lock = sim.p.lock;
       view.target = view.target ? null : lock || nearest();
       document.body.classList.toggle('target-on', !!view.target);
     }

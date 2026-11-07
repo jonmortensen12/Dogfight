@@ -341,7 +341,11 @@ export function buildTeddyShip(glow){
   main.scale.set(2.2, 2.2, 1); main.position.set(0, 0, -3.5);
   g.add(main); engines.push(main);
   add(new THREE.CylinderGeometry(0.4, 0.5, 0.4, 14), glowMat(0x7ae6ff, 2.5), 0, 0, -3.35, Math.PI / 2);
-  g.userData = {flash, engines, pilot, tag};
+  // the charge gathering at the nose
+  const charge = new THREE.Sprite(new THREE.SpriteMaterial({map: glow, color: hot(0x70ff90, 2.2), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true}));
+  charge.position.set(0, -0.1, 4.3); charge.visible = false;
+  g.add(charge);
+  g.userData = {flash, engines, pilot, tag, charge};
   return g;
 }
 
@@ -724,8 +728,9 @@ export class World {
     const boltMat = new THREE.SpriteMaterial({map: glow, color: hot(0xff5030, 2.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
     this.boltSprites = []; for(let i = 0; i < 140; i++){ const s = new THREE.Sprite(boltMat); s.scale.set(3.2, 3.2, 1); s.visible = false; scene.add(s); this.boltSprites.push(s); }
     this.boltTails = []; for(let i = 0; i < 140; i++) this.boltTails.push(new Beam(scene, hot(0xff4020, 1.6), 0.5));
-    const misMat = new THREE.SpriteMaterial({map: glow, color: hot(0x80c0ff, 3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
-    this.misSprites = []; for(let i = 0; i < 12; i++){ const s = new THREE.Sprite(misMat); s.scale.set(4, 4, 1); s.visible = false; scene.add(s); this.misSprites.push(s); }
+    this.misMat = new THREE.SpriteMaterial({map: glow, color: hot(0x80c0ff, 3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
+    this.chargeMat = new THREE.SpriteMaterial({map: glow, color: hot(0x70ff90, 3.2), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
+    this.misSprites = []; for(let i = 0; i < 12; i++){ const s = new THREE.Sprite(this.misMat); s.scale.set(4, 4, 1); s.visible = false; scene.add(s); this.misSprites.push(s); }
     // flashes and rings for explosions
     this.flashes = [];
     for(let i = 0; i < 16; i++){
@@ -854,6 +859,13 @@ export class World {
         this.flash(e, hot(0xa0c8ff, 3), e.r * 2, 0.5);
         this.ring(e, hot(0x80b0ff, 2.5), e.r * 2.6, 0.7);
         this.shake = Math.max(this.shake, 0.8);
+      } else if(e.k === 'burst'){
+        P.burst(e, 90, 45, hot(0x70ff90, 2.4), 4, 0.8, 2);
+        this.flash(e, hot(0xb0ffc0, 3), e.r * 1.8, 0.35);
+        this.ring(e, hot(0x70ff90, 2.5), e.r * 2.4, 0.5);
+        this.shake = Math.max(this.shake, 0.4);
+      } else if(e.k === 'deflect'){
+        this.ring(e, hot(0x80e0ff, 2.5), 14, 0.35);
       } else if(e.k === 'scrape'){
         P.burst(e, 14, 20, hot(0xffc070, 2), 1.4, 0.5, 15);
         P.burst(e, 8, 10, new THREE.Color(0.5, 0.35, 0.25), 5, 1.2, -1);
@@ -903,6 +915,9 @@ export class World {
     ship.userData.pilot.rotation.y = Math.sin(this.time * 0.7) * 0.25;
     ship.userData.pilot.rotation.z = -p.bank * 0.3;
     ship.userData.tag.rotation.z = Math.sin(this.time * 6) * 0.3;
+    const cg = ship.userData.charge, ch = p.charge || 0;
+    cg.visible = ch > 0;
+    if(ch > 0){ const k = (ch >= 1 ? 3.2 + Math.sin(this.time * 30) * 0.5 : 0.6 + ch * 2.2); cg.scale.set(k, k, 1); }
     // the shadow on the ground under it
     const g = height(p.x, p.z);
     const alt = p.y - g;
@@ -1001,8 +1016,12 @@ export class World {
     i = 0;
     for(const m of s.missiles.concat(s.bombs)){
       if(i >= this.misSprites.length) break;
-      this.misSprites[i].position.set(m.x, m.y, m.z); this.misSprites[i].visible = true; i++;
-      this.parts.emit(m.x, m.y, m.z, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.9, 0.9, 1.0, 2.2, 0.7, 0.5, 1.5);
+      const sp = this.misSprites[i++];
+      sp.position.set(m.x, m.y, m.z); sp.visible = true;
+      sp.material = m.charged ? this.chargeMat : this.misMat;
+      const k = m.charged ? 7 + Math.sin(this.time * 40) : 4; sp.scale.set(k, k, 1);
+      if(m.charged) for(let j = 0; j < 3; j++) this.parts.emit(m.x - m.fx * j * 1.5, m.y - m.fy * j * 1.5, m.z - m.fz * j * 1.5, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.4, 1.6, 0.6, 2.6, 0.45, 1, 0.5);
+      else this.parts.emit(m.x, m.y, m.z, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.9, 0.9, 1.0, 2.2, 0.7, 0.5, 1.5);
     }
     for(; i < this.misSprites.length; i++) this.misSprites[i].visible = false;
 
@@ -1051,6 +1070,12 @@ export class World {
       want.set(c.x, r.oy * 0.85 + 6.5, c.z);
       const l = railPoint(r.u + 45, r.ox * 0.85, 0);
       look.set(l.x, r.oy * 0.92 + 2, l.z);
+      if(p.man){
+        // the somersault: the camera hangs back, rises a little and watches the ship go over
+        const c2 = railPoint(r.u - 30, r.ox * 0.72, 0);
+        want.set(c2.x, r.oy * 0.85 + 10 + (p.y - r.oy) * 0.35, c2.z);
+        look.set(p.x, p.y, p.z);
+      }
       up.set(0, 1, 0).applyAxisAngle(_v1.set(p.fx, 0, p.fz).normalize(), -p.bank * 0.12);
     } else {
       const f = _v1.set(p.fx, p.fy, p.fz);

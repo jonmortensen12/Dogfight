@@ -90,7 +90,7 @@ export class Hud {
     this.c = canvas; this.g = canvas.getContext('2d');
     FACES.teddy = portrait(drawTeddy); FACES.rosie = portrait(drawRosie);
     this.radio = null; this.queue = [];
-    this.hurt = 0; this.banner = null; this.lockPulse = 0;
+    this.hurt = 0; this.banner = null; this.lockPulse = 0; this.deflectT = 0;
     this.resize();
   }
   resize(){
@@ -123,6 +123,13 @@ export class Hud {
     if(p.shield < 25 && !p.dead){
       const k = 0.15 + 0.15 * Math.sin(performance.now() / 150);
       g.strokeStyle = `rgba(255,40,30,${k})`; g.lineWidth = 14; g.strokeRect(0, 0, W, H);
+    }
+    if(this.deflectT > 0){
+      this.deflectT -= dt;
+      g.globalAlpha = Math.min(1, this.deflectT * 3);
+      g.font = font(14, 900); g.fillStyle = '#80e0ff'; g.textAlign = 'center';
+      g.fillText('DEFLECTED!', W / 2, H * 0.62);
+      g.textAlign = 'left'; g.globalAlpha = 1;
     }
     if(!p.dead && !view.hideAim){
       this.enemyMarks(s, world, g, W, H, font);
@@ -193,16 +200,20 @@ export class Hud {
     const p = s.p;
     const near = world.project(p.x + p.fx * 45, p.y + p.fy * 45, p.z + p.fz * 45);
     const far = world.project(p.x + p.fx * 110, p.y + p.fy * 110, p.z + p.fz * 110);
-    const locking = p.cand && !p.lock ? Math.min(1, p.candT / 0.45) : 0;
-    const col = p.lock ? '#ff5050' : locking > 0 ? '#ffd040' : '#7dffb0';
-    g.strokeStyle = col; g.lineWidth = 2;
+    const ch = p.charge || 0, full = ch >= 1;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 70);
+    const col = p.lock ? '#ff5050' : full ? `rgb(${200 + 55 * pulse},255,${120 + 60 * pulse})` : '#7dffb0';
+    g.strokeStyle = col; g.lineWidth = full ? 3 : 2;
     if(!near.behind){ const r = 17; g.strokeRect(near.x - r, near.y - r, r * 2, r * 2); }
     if(!far.behind){
       const r = 10; g.strokeRect(far.x - r, far.y - r, r * 2, r * 2);
       g.beginPath(); g.moveTo(far.x - 4, far.y); g.lineTo(far.x + 4, far.y); g.moveTo(far.x, far.y - 4); g.lineTo(far.x, far.y + 4); g.stroke();
     }
-    if(locking > 0 && !far.behind){
-      g.beginPath(); g.arc(far.x, far.y, 22, -Math.PI / 2, -Math.PI / 2 + locking * Math.PI * 2); g.stroke();
+    // the charge, filling a ring round the far box
+    if(ch > 0 && !far.behind){
+      g.strokeStyle = full ? col : 'rgba(125,255,176,0.9)'; g.lineWidth = 3;
+      g.beginPath(); g.arc(far.x, far.y, 24, -Math.PI / 2, -Math.PI / 2 + ch * Math.PI * 2); g.stroke();
+      if(full && !p.lock){ g.font = font(11, 800); g.fillStyle = col; g.textAlign = 'center'; g.fillText('CHARGED - aim at one', far.x, far.y + 40); g.textAlign = 'left'; }
     }
     if(p.lock){
       const e = s.enemies.find(e => e.id === p.lock);
@@ -215,7 +226,7 @@ export class Hud {
           g.save(); g.translate(q.x, q.y); g.rotate(Math.PI / 4 + this.lockPulse * 0.2);
           g.strokeRect(-r, -r, r * 2, r * 2); g.restore();
           g.font = font(11, 800); g.fillStyle = '#ff6060'; g.textAlign = 'center';
-          g.fillText(p.bombs > 0 ? 'LOCKED - BOMB to fire' : 'LOCKED', q.x, q.y + r + 18);
+          g.fillText('LOCKED - let go of FIRE', q.x, q.y + r + 18);
           g.textAlign = 'left';
         }
       }

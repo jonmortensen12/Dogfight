@@ -43,37 +43,46 @@ await pg.screenshot({path: '/tmp/dogfight-title.png'});
 
 console.log('\nTilt');
 // A phone held sideways (top to the left), screen to the player, tipped back
-// `back` degrees from upright, turned `wheel` degrees clockwise. Built in
-// the W3C earth frame and turned into the alpha/beta/gamma a phone reports.
+// 40 degrees from upright. Then turned about its own axes the way a player
+// would: left side pulled closer, top tipped away or towards, turned like a
+// steering wheel. Built in the W3C earth frame and turned into the
+// alpha/beta/gamma a phone reports.
 const steer = await pg.evaluate(async () => {
   const THREE = await import('three');
   const D = Math.PI / 180;
-  function pose(back, wheel){
+  // held sideways, top to the left: the screen's right is the device's -y,
+  // the screen's up is the device's +x, out of the screen is +z
+  const AX = {up: new THREE.Vector3(1, 0, 0), right: new THREE.Vector3(0, -1, 0), out: new THREE.Vector3(0, 0, 1)};
+  function pose(turns){
     let q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
-    q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (90 - back) * D).multiply(q);
-    const n = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-    q = new THREE.Quaternion().setFromAxisAngle(n, -wheel * D).multiply(q);
+    q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 50 * D).multiply(q);
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 37 * D));   // facing some compass way
+    for(const [axis, deg] of turns) q.multiply(new THREE.Quaternion().setFromAxisAngle(AX[axis], deg * D));
     const e = new THREE.Euler().setFromQuaternion(q, 'ZXY');
-    return {alpha: e.z / D, beta: e.x / D, gamma: e.y / D};
+    return {alpha: (e.z / D + 360) % 360, beta: e.x / D, gamma: e.y / D};
   }
-  // the page reads the screen's angle: pretend it is sideways
   Object.defineProperty(screen.orientation, 'angle', {get: () => 90, configurable: true});
   const inp = window.__dog.input;
-  const send = (back, wheel) => window.dispatchEvent(Object.assign(new Event('deviceorientation'), pose(back, wheel)));
+  const send = turns => window.dispatchEvent(Object.assign(new Event('deviceorientation'), pose(turns)));
+  send([]); inp.centre();
   const out = {};
-  send(40, 0); inp.centre();
-  for(const [k, b, w] of [['still', 40, 0], ['right', 40, 18], ['left', 40, -18], ['away', 55, 0], ['toward', 25, 0]]){
-    send(b, w); const r = inp.read(); out[k] = {sx: r.sx, sy: r.sy};
+  for(const [k, turns] of [['still', []], ['leftCloser', [['up', 15]]], ['rightCloser', [['up', -15]]],
+    ['topAway', [['right', -15]]], ['topToward', [['right', 15]]], ['wheelRight', [['out', -20]]], ['wheelLeft', [['out', 20]]]]){
+    send(turns); const r = inp.read(); out[k] = {sx: r.sx, sy: r.sy, sr: r.sr};
   }
-  inp.invert = true; send(55, 0); out.awayInverted = inp.read().sy; inp.invert = false;
+  inp.invert = true; send([['right', -15]]); out.awayInverted = inp.read().sy; inp.invert = false;
   return out;
 });
-ok(Math.abs(steer.still.sx) < 0.01 && Math.abs(steer.still.sy) < 0.01, 'held still where it was centred: no steering');
-ok(steer.right.sx > 0.4, `turned clockwise: steers right (${steer.right.sx.toFixed(2)})`);
-ok(steer.left.sx < -0.4, `turned anticlockwise: steers left (${steer.left.sx.toFixed(2)})`);
-ok(steer.away.sy < -0.4, `top tipped away: dives (${steer.away.sy.toFixed(2)})`);
-ok(steer.toward.sy > 0.4, `top tipped towards you: climbs (${steer.toward.sy.toFixed(2)})`);
-ok(steer.awayInverted > 0.4, 'inverted: tipped away climbs');
+const f = o => `turn ${o.sx.toFixed(2)}, nose ${o.sy.toFixed(2)}, roll ${o.sr.toFixed(2)}`;
+const small = v => Math.abs(v) < 0.08;
+ok(small(steer.still.sx) && small(steer.still.sy) && small(steer.still.sr), 'held still where it was centred: nothing');
+ok(steer.leftCloser.sx < -0.4 && small(steer.leftCloser.sr), `left side pulled closer: turns left, no roll (${f(steer.leftCloser)})`);
+ok(steer.rightCloser.sx > 0.4 && small(steer.rightCloser.sr), `right side pulled closer: turns right (${f(steer.rightCloser)})`);
+ok(steer.topAway.sy < -0.4 && small(steer.topAway.sx), `top tipped away: nose down (${f(steer.topAway)})`);
+ok(steer.topToward.sy > 0.4 && small(steer.topToward.sx), `top tipped towards you: nose up (${f(steer.topToward)})`);
+ok(steer.wheelRight.sr > 0.3 && small(steer.wheelRight.sx), `turned clockwise like a wheel: rolls right, does not turn (${f(steer.wheelRight)})`);
+ok(steer.wheelLeft.sr < -0.3 && small(steer.wheelLeft.sx), `turned anticlockwise: rolls left (${f(steer.wheelLeft)})`);
+ok(steer.awayInverted > 0.4, 'inverted: tipped away noses up');
 await pg.close();
 
 console.log('\nA game, by hand');
@@ -84,11 +93,18 @@ ok(true, 'FLY! counts in and the game starts');
 const fire = await pg.$('#b-fire'), boost = await pg.$('#b-boost');
 const fb = await fire.boundingBox(), bb = await boost.boundingBox();
 const shotsBefore = await pg.evaluate(() => window.__dog.sim.stats.shots);
-await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down();
-await pg.waitForTimeout(1200);
+for(let i = 0; i < 3; i++){ await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(160); }
+const taps = await pg.evaluate(() => window.__dog.sim.stats.shots) - shotsBefore;
+ok(taps === 3, `three taps of FIRE, three shots (${taps})`);
+await pg.mouse.down();
+const charged = await pg.waitForFunction(() => window.__dog.sim.p.charge >= 1, null, {timeout: 5000}).then(() => true, () => false);
+ok(charged, 'holding FIRE charges a shot');
 await pg.mouse.up();
-const shots = await pg.evaluate(() => window.__dog.sim.stats.shots) - shotsBefore;
-ok(shots > 3, `holding FIRE shoots (${shots} shots)`);
+ok(await pg.waitForFunction(() => window.__dog.sim.stats.charged >= 1, null, {timeout: 2000}).then(() => true, () => false), 'letting go fires it');
+const lb = await (await pg.$('#b-loop')).boundingBox();
+await pg.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(80); await pg.mouse.up();
+ok(await pg.waitForFunction(() => window.__dog.sim.p.man && window.__dog.sim.p.man.kind === 'loop', null, {timeout: 1500}).then(() => true, () => false), 'LOOP loops, on the rail');
+await pg.waitForFunction(() => !window.__dog.sim.p.man, null, {timeout: 15000});
 const sp0 = await pg.evaluate(() => window.__dog.sim.p.speed);
 await pg.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await pg.mouse.down();
 await pg.waitForTimeout(1500);

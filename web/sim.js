@@ -16,8 +16,9 @@
                  its own axes. Loops, inverted flight, everything.
    Units are metres and seconds; y is up; the level runs along -z.
 
-   Input: {sx, sy} the stick in -1..1 (right, climb), fire, boost, brake
-   (held), and the one-shot presses bomb, roll (-1 left, +1 right), uturn. */
+   Input: {sx, sy, sr} the stick in -1..1 (turn right, nose up, roll
+   right), fire, boost, brake (held), and the one-shot presses bomb, loop,
+   uturn, roll (a barrel roll: -1 left, +1 right). */
 import {height, normalAt, hitObstacle, railFrame, halfW, cx, OBSTACLES, archUnder,
   CANYON_END, ARENA, ARENA_U, ARENA_LIMIT, CEILING, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN} from './terrain.js';
 
@@ -30,6 +31,9 @@ export const SKILLS = {
 export const SPEED = {rail: 60, railBoost: 100, railBrake: 32, free: 62, freeBoost: 108, freeBrake: 34};
 const SHOT_SPEED = 430, BOLT_SPEED = 125;
 const SHIP_R = 2.2;
+/* The charged shot: starts charging after holding FIRE this long, full after
+   this much more; locks within this cone (radians); its hit and burst. */
+export const CHARGE = {start: 0.22, time: 0.75, cone: 0.21, dmg: 7, blast: 22};
 
 /* ---------- small vector help (arrays would be tidier; objects are faster to read) ---------- */
 const len = (x, y, z) => Math.hypot(x, y, z);
@@ -79,7 +83,7 @@ export function newSim(opts){
     rand: rng(opts.seed || 7), nextId: 1,
     phase: 'canyon', mode: 'rail', wave: 0, waveT: 0, clearT: 0, done: false, failed: false,
     p: null, enemies: [], shots: [], bolts: [], missiles: [], bombs: [], pickups: [], events: [],
-    script: [], stats: {kills: 0, shots: 0, hits: 0, gold: 0, goldTotal: 0, damage: 0, time: 0, bombs: 0},
+    script: [], stats: {kills: 0, shots: 0, hits: 0, gold: 0, goldTotal: 0, damage: 0, time: 0, bombs: 0, charged: 0},
     boss: null, warn: '', arena: ARENA, checkpoint: opts.start === 'arena' ? 'arena' : 'canyon',
   };
   const u0 = opts.start === 'arena' ? CANYON_END - 120 : 0;
@@ -87,8 +91,8 @@ export function newSim(opts){
     x: 0, y: 30, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0, vx: 0, vy: 0, vz: 0,
     speed: SPEED.rail, shield: 100, boost: 1, bombs: 3, twin: false,
     rail: {u: u0, ox: 0, oy: 30, vx: 0, vy: 0},
-    yaw: 0, pitch: 0, bank: 0, rollT: 0, rollDir: 0, spin: 0, uturn: null,
-    hitT: 0, fireT: 0, lock: null, cand: null, candT: 0, lockLost: 0, dead: false, deadT: 0, scrape: 0,
+    yaw: 0, pitch: 0, bank: 0, rollT: 0, rollDir: 0, spin: 0, man: null, charge: 0, holdT: 0, fireHeld: false,
+    hitT: 0, fireT: 0, lock: null, dead: false, deadT: 0, scrape: 0,
     behind: 0,
   };
   placeRail(s, 0);
@@ -105,7 +109,7 @@ function buildScript(s, u0){
   const S = [];
   const at = (u, fn) => { if(u >= u0) S.push({u, fn}); };
   at(60, () => say(s, 'rosie', 'Teddy, the Hiss have dug into Red Canyon. Clear it out.', 3.6));
-  at(200, () => say(s, 'teddy', 'On it! Tilt to steer, thumb to bark.', 3));
+  at(200, () => say(s, 'teddy', 'On it! Point the phone to steer. Tap to bark, hold for a big one.', 3));
   at(330, () => formation(s, 'oncoming', 3, 330 + 420));
   at(560, () => { turret(s, 1050, -1); turret(s, 1080, 1); });
   at(620, () => pickup(s, 'bone', 760, 0, 14));
@@ -135,8 +139,8 @@ function newEnemy(s, type, o){
     raider: {hp: 5, r: 3.6, score: 200, speed: 78},
     turret: {hp: 3, r: 4.2, score: 100, speed: 0},
     torpedo: {hp: 1, r: 2.6, score: 50, speed: 42},
-    pod: {hp: 14, r: 7, score: 500, speed: 0},
-    brute: {hp: 40, r: 13, score: 2000, speed: 30},
+    pod: {hp: 11, r: 7, score: 500, speed: 0},
+    brute: {hp: 30, r: 13, score: 2000, speed: 30},
   }[type];
   const e = Object.assign({id: s.nextId++, type, x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, ux: 0, uy: 1, uz: 0,
     t: 0, fireT: 1 + s.rand() * 1.5, burst: 0, state: '', ph: s.rand() * 6.28, flash: 0, bank: 0}, base, o || {});
@@ -256,9 +260,18 @@ export function step(s, dt, inp){
 }
 
 /* ---------- flying: the rail ---------- */
+export const LOOP = {railR: 24, railDur: 1.9, freeDur: 2.2, uturnUp: 1.1, uturnRoll: 0.55};
 function flyRail(s, dt, inp){
   const p = s.p, r = p.rail;
   const want = inp.boost && p.boost > 0.02 ? SPEED.railBoost : inp.brake && p.boost > 0.02 ? SPEED.railBrake : SPEED.rail;
+  if(inp.loop && !p.man){
+    // a somersault: the rail waits while the ship goes up, over (facing
+    // backwards at the top) and down again. Whatever was behind is now ahead.
+    p.man = {kind: 'loop', t: 0, dur: LOOP.railDur, u0: r.u, ox0: r.ox, oy0: r.oy};
+    r.vx = r.vy = 0;
+    ev(s, 'loop');
+  }
+  if(p.man){ railLoop(s, dt); return; }
   meter(p, dt, want !== SPEED.rail);
   p.speed += (want - p.speed) * Math.min(1, 2.5 * dt);
   r.u += p.speed * dt;
@@ -274,7 +287,27 @@ function flyRail(s, dt, inp){
   const q = railPoint(r.u, r.ox, 0);
   const floor = Math.max(RAIL_FLOOR, height(q.x, q.z) + 4);
   if(r.oy < floor){ r.oy = floor; r.vy = Math.max(0, r.vy); }
+  // the wheel rolls the ship; sliding sideways leans it a little too
+  const bankT = clamp((inp.sr || 0) * 1.3 + r.vx / 42 * 0.35, -1.45, 1.45);
+  p.bank += (bankT - p.bank) * Math.min(1, 8 * dt);
   placeRail(s, dt);
+}
+function railLoop(s, dt){
+  const p = s.p, r = p.rail, m = p.man;
+  m.t += dt;
+  const k = Math.min(1, m.t / m.dur);
+  const th = Math.PI * 2 * (k - Math.sin(Math.PI * 2 * k) * 0.08);     // a touch slower over the top
+  const R = LOOP.railR, f = railFrame(m.u0);
+  const along = R * Math.sin(th), up = R * (1 - Math.cos(th));
+  const ox = p.x, oy = p.y, oz = p.z;
+  p.x = f.x + f.tx * along + f.rx * m.ox0; p.y = m.oy0 + up; p.z = f.z + f.tz * along + f.rz * m.ox0;
+  if(dt > 0){ p.vx = (p.x - ox) / dt; p.vy = (p.y - oy) / dt; p.vz = (p.z - oz) / dt; }
+  const c = Math.cos(th), sn = Math.sin(th);
+  p.fx = f.tx * c; p.fy = sn; p.fz = f.tz * c;
+  p.ux = -f.tx * sn; p.uy = c; p.uz = -f.tz * sn;
+  p.bank = 0;
+  p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1));
+  if(k >= 1){ p.man = null; r.oy = m.oy0; r.ox = m.ox0; placeRail(s, 0); }
 }
 function placeRail(s, dt){
   const p = s.p, r = p.rail, f = railFrame(r.u);
@@ -285,7 +318,6 @@ function placeRail(s, dt){
   const k = 1.15 / Math.max(30, p.speed);
   const fwd = norm({x: f.tx + f.rx * r.vx * k, y: r.vy * k, z: f.tz + f.rz * r.vx * k});
   p.fx = fwd.x; p.fy = fwd.y; p.fz = fwd.z;
-  p.bank = clamp(r.vx / 42, -1, 1) * 0.75;
   orient(p);
   p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1));
 }
@@ -302,17 +334,24 @@ function meter(p, dt, using){
   else p.boost = Math.min(1, p.boost + dt / 4);
 }
 
-/* ---------- flying: free ---------- */
+/* ---------- flying: free ----------
+   The stick: sx turns the nose left/right, sy up/down, sr rolls.
+   'level': the nose turns about the world's up and the roll is only a lean
+   (the horizon stays put). 'full': all three about the ship's own axes.
+   The LOOP and the U-TURN are flown the same way in both: a whole loop, or
+   half a loop and then half a roll, about the ship's own axes. */
 function flyFree(s, dt, inp){
   const p = s.p;
   const want = inp.boost && p.boost > 0.02 ? SPEED.freeBoost : inp.brake && p.boost > 0.02 ? SPEED.freeBrake : SPEED.free;
   meter(p, dt, want !== SPEED.free);
   p.speed += (want - p.speed) * Math.min(1, 2 * dt);
-  let sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1);
+  let sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1), sr = clamp(inp.sr || 0, -1, 1);
 
-  if(inp.uturn && !p.uturn){
-    p.uturn = {t: 0, yaw0: p.yaw, pitch0: p.pitch, dir: p.bank >= 0 ? 1 : -1, dur: s.style === 'full' ? 1.6 : 1.4};
-    ev(s, 'uturn');
+  if(!p.man && (inp.loop || inp.uturn)){
+    const u = {x: p.ux, y: p.uy, z: p.uz};
+    if(s.style === 'level'){ p.bank = 0; orient(p); }      // start the maneuver from wings level
+    p.man = inp.loop ? {kind: 'loop', t: 0, dur: LOOP.freeDur} : {kind: 'uturn', t: 0, dur: LOOP.uturnUp + LOOP.uturnRoll, dir: (s.style === 'full' && u.y < 0) ? 1 : (p.bank >= 0 ? 1 : -1)};
+    ev(s, inp.loop ? 'loop' : 'uturn');
   }
   // the clearing's edges: turn the ship back in
   const ax = p.x - ARENA.x, az = p.z - ARENA.z, rr = Math.hypot(ax, az);
@@ -320,48 +359,47 @@ function flyFree(s, dt, inp){
   if(rr > ARENA_LIMIT - 120){ s.warn = 'TURN BACK'; home = clamp((rr - (ARENA_LIMIT - 120)) / 120, 0, 1); }
   if(p.y > CEILING - 40) s.warn = 'TOO HIGH';
 
-  if(s.style === 'level'){
-    if(p.uturn){
-      const u = p.uturn; u.t += dt;
-      const k = Math.min(1, u.t / u.dur), e = k * k * (3 - 2 * k);
-      p.yaw = u.yaw0 + Math.PI * e * u.dir;
-      p.pitch = u.pitch0 * (1 - e) + 0.75 * Math.sin(Math.PI * k);
-      p.bank = u.dir * 1.25 * Math.sin(Math.PI * k);
-      if(k >= 1) p.uturn = null;
-    } else {
-      if(home > 0){
-        const toYaw = Math.atan2(-ax, az);
-        sx = clamp(sx + clamp(wrap(toYaw - p.yaw) * 2, -1, 1) * home * 1.5, -1, 1);
-      }
-      const bankT = sx * 1.2;
-      p.bank += (bankT - p.bank) * Math.min(1, 4 * dt);
-      p.yaw += 1.6 * Math.sin(p.bank) * dt;
-      if(Math.abs(sy) > 0.06) p.pitch += sy * 1.25 * dt;
-      else p.pitch -= p.pitch * Math.min(1, 0.6 * dt);     // let go and it levels out
-      if(p.y > CEILING - 40) p.pitch = Math.min(p.pitch, -0.1);
-      p.pitch = clamp(p.pitch, -1.15, 1.15);
+  if(p.man){
+    const f = {x: p.fx, y: p.fy, z: p.fz}, u = {x: p.ux, y: p.uy, z: p.uz};
+    const m = p.man; m.t += dt;
+    // how much of each part of the maneuver falls in this step, so it
+    // lands exactly: a loop is 360 degrees of pitch; a U-turn is 180 of
+    // pitch (over the top, upside down) then 180 of roll (right way up)
+    const span = (a, b) => Math.max(0, Math.min(m.t, b) - Math.max(m.t - dt, a));
+    if(m.kind === 'loop') rot(f, u, null, Math.PI * 2 / m.dur * span(0, m.dur), 0, 0);
+    else {
+      rot(f, u, null, Math.PI / LOOP.uturnUp * span(0, LOOP.uturnUp), 0, 0);
+      rot(f, u, null, 0, Math.PI / LOOP.uturnRoll * m.dir * span(LOOP.uturnUp, m.dur), 0);
     }
-    const cp = Math.cos(p.pitch);
-    p.fx = Math.sin(p.yaw) * cp; p.fy = Math.sin(p.pitch); p.fz = -Math.cos(p.yaw) * cp;
-    orient(p);
+    p.fx = f.x; p.fy = f.y; p.fz = f.z; p.ux = u.x; p.uy = u.y; p.uz = u.z;
+    p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1));
+    if(m.t >= m.dur){
+      p.man = null;
+      if(s.style === 'level'){ p.pitch = clamp(p.pitch, -1.15, 1.15); p.bank = 0; levelFrame(p); }
+    }
+  } else if(s.style === 'level'){
+    if(home > 0){
+      const toYaw = Math.atan2(-ax, az);
+      sx = clamp(sx + clamp(wrap(toYaw - p.yaw) * 2, -1, 1) * home * 1.5, -1, 1);
+    }
+    p.yaw += sx * 1.5 * dt;
+    if(Math.abs(sy) > 0.06) p.pitch += sy * 1.25 * dt;
+    else p.pitch -= p.pitch * Math.min(1, 0.6 * dt);     // let go and it levels out
+    if(p.y > CEILING - 40) p.pitch = Math.min(p.pitch, -0.1);
+    p.pitch = clamp(p.pitch, -1.15, 1.15);
+    // the roll is a lean: the wheel, plus a little into the turn
+    const bankT = clamp(sr * 1.3 + sx * 0.45, -1.45, 1.45);
+    p.bank += (bankT - p.bank) * Math.min(1, 6 * dt);
+    levelFrame(p);
   } else {
     // full: about the ship's own axes
     const f = {x: p.fx, y: p.fy, z: p.fz}, u = {x: p.ux, y: p.uy, z: p.uz};
-    let pr = sy * 1.55, rr2 = sx * 2.7, yr = sx * 0.35;
-    if(p.uturn){
-      const t = p.uturn; t.t += dt;
-      if(t.t < 1.05){ pr = Math.PI / 1.05; rr2 = 0; yr = 0; }
-      else if(t.t < 1.6){ pr = 0; rr2 = Math.PI / 0.55 * t.dir; yr = 0; }
-      else p.uturn = null;
-    }
-    if(home > 0 && !p.uturn){
-      // nudge the nose home
+    if(home > 0){
       const d = norm({x: -ax, y: 0.15 * rr, z: -az});
       turnToward(f, d, home * 0.9 * dt);
     }
     if(p.y > CEILING - 40 && f.y > 0) turnToward(f, norm({x: f.x, y: -0.3, z: f.z}), 1.0 * dt);
-    const right = cross(f, u);
-    rot(f, u, right, pr * dt, rr2 * dt, yr * dt);
+    rot(f, u, null, sy * 1.55 * dt, sr * 2.6 * dt, sx * 1.3 * dt);
     p.fx = f.x; p.fy = f.y; p.fz = f.z; p.ux = u.x; p.uy = u.y; p.uz = u.z;
     p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1));
     const rt = norm({x: -p.fz, y: 0, z: p.fx});
@@ -373,6 +411,11 @@ function flyFree(s, dt, inp){
   p.vx = p.fx * p.speed + side.x * push; p.vy = p.fy * p.speed + side.y * push; p.vz = p.fz * p.speed + side.z * push;
   p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
   if(p.y > CEILING) p.y = CEILING;
+}
+function levelFrame(p){
+  const cp = Math.cos(p.pitch);
+  p.fx = Math.sin(p.yaw) * cp; p.fy = Math.sin(p.pitch); p.fz = -Math.cos(p.yaw) * cp;
+  orient(p);
 }
 /* Rotate the ship's frame: pitch about right, roll about forward, yaw about up. */
 function rot(f, u, r, pitch, roll, yaw){
@@ -405,7 +448,7 @@ function ship(s, dt, inp){
       // bounce the nose off
       const f = {x: p.fx, y: p.fy, z: p.fz};
       const d = dot(f, n);
-      if(d < 0.3){ turnToward(f, norm({x: f.x + n.x * 1.2, y: f.y + n.y * 1.2, z: f.z + n.z * 1.2}), 0.8); p.fx = f.x; p.fy = f.y; p.fz = f.z; p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1)); if(s.style === 'full') fixUp(p); }
+      if(d < 0.3){ turnToward(f, norm({x: f.x + n.x * 1.2, y: f.y + n.y * 1.2, z: f.z + n.z * 1.2}), 0.8); p.fx = f.x; p.fy = f.y; p.fz = f.z; p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1)); if(s.style === 'full') fixUp(p); else { p.pitch = clamp(p.pitch, -1.15, 1.15); levelFrame(p); } }
     } else {
       // in the canyon an arch or a spire knocks you aside
       if(ob && ob.type === 'arch'){ p.rail.oy -= 6; p.rail.vy = -20; }
@@ -415,52 +458,65 @@ function ship(s, dt, inp){
   }
   if(s.mode === 'free' && p.y - g < 35) s.warn = s.warn || 'PULL UP';
 
-  // lock on: hold the nose on something
+  // guns. A tap shoots. Holding on charges a shot (about a second); once
+  // it is charged the reticle locks on to whatever the nose is near, and
+  // letting go fires it - homing if it has a lock. Only a charged shot locks.
   const f = {x: p.fx, y: p.fy, z: p.fz};
-  let best = null, bestA = 0.2;
-  for(const e of s.enemies){
-    if(e.type === 'brute' && e.shielded) continue;
-    const dx = e.x - p.x, dy = e.y - p.y, dz = e.z - p.z, d = len(dx, dy, dz);
-    if(d > 700 || d < 20) continue;
-    const a = Math.acos(clamp((dx * f.x + dy * f.y + dz * f.z) / d, -1, 1));
-    if(a < bestA){ bestA = a; best = e; }
-  }
-  if(best && (!p.lock || p.lock !== best.id)){
-    if(p.cand === best.id) p.candT += dt; else { p.cand = best.id; p.candT = 0; }
-    if(p.candT > 0.45){ p.lock = best.id; p.lockLost = 0; ev(s, 'lock'); }
-  } else if(!best){ p.cand = null; p.candT = 0; }
-  if(p.lock){
-    const e = s.enemies.find(e => e.id === p.lock);
-    if(!e) p.lock = null;
-    else {
-      const dx = e.x - p.x, dy = e.y - p.y, dz = e.z - p.z, d = len(dx, dy, dz);
-      const a = Math.acos(clamp((dx * f.x + dy * f.y + dz * f.z) / d, -1, 1));
-      if(a > 0.7 || d > 900){ p.lockLost += dt; if(p.lockLost > 0.8) p.lock = null; } else p.lockLost = 0;
+  if(inp.fire && !p.fireHeld){
+    p.holdT = 0;
+    if(p.fireT <= 0){
+      p.fireT = 0.1;
+      const d = assist(s, f);
+      const side = norm(cross(f, {x: p.ux, y: p.uy, z: p.uz}));
+      const guns = p.twin ? [-1.7, 1.7] : [0];
+      for(const o of guns){
+        s.shots.push({x: p.x + f.x * 3 + side.x * o, y: p.y + f.y * 3 + side.y * o - 0.3, z: p.z + f.z * 3 + side.z * o,
+          vx: d.x * SHOT_SPEED + p.vx, vy: d.y * SHOT_SPEED + p.vy, vz: d.z * SHOT_SPEED + p.vz, life: 1.15});
+        s.stats.shots++;
+      }
+      ev(s, 'fire', {twin: p.twin});
     }
   }
-
-  // guns
-  if(inp.fire && p.fireT <= 0){
-    p.fireT = 0.11;
-    const d = assist(s, f);
-    const side = norm(cross(f, {x: p.ux, y: p.uy, z: p.uz}));
-    const guns = p.twin ? [-1.7, 1.7] : [0];
-    for(const o of guns){
-      s.shots.push({x: p.x + f.x * 3 + side.x * o, y: p.y + f.y * 3 + side.y * o - 0.3, z: p.z + f.z * 3 + side.z * o,
-        vx: d.x * SHOT_SPEED + p.vx, vy: d.y * SHOT_SPEED + p.vy, vz: d.z * SHOT_SPEED + p.vz, life: 1.15});
-      s.stats.shots++;
+  if(inp.fire){
+    p.holdT += dt;
+    if(p.holdT > CHARGE.start){
+      const was = p.charge;
+      p.charge = Math.min(1, p.charge + dt / CHARGE.time);
+      if(was < 1 && p.charge >= 1) ev(s, 'charged');
     }
-    ev(s, 'fire', {twin: p.twin});
+  } else if(p.fireHeld){
+    if(p.charge >= 1){
+      s.missiles.push({x: p.x + f.x * 4, y: p.y + f.y * 4, z: p.z + f.z * 4, fx: f.x, fy: f.y, fz: f.z, speed: 230, target: p.lock, life: 2.6, charged: true});
+      ev(s, 'chargeShot', {lock: !!p.lock});
+      s.stats.charged++;
+    }
+    p.charge = 0; p.lock = null;
   }
+  p.fireHeld = !!inp.fire;
+  if(p.charge >= 1){
+    let lockE = p.lock && s.enemies.find(e => e.id === p.lock);
+    if(lockE){
+      const dx = lockE.x - p.x, dy = lockE.y - p.y, dz = lockE.z - p.z, d = len(dx, dy, dz);
+      if(Math.acos(clamp((dx * f.x + dy * f.y + dz * f.z) / d, -1, 1)) > 0.6 || d > 900) lockE = null;
+    }
+    if(!lockE){
+      p.lock = null;
+      let bestA = CHARGE.cone;
+      for(const e of s.enemies){
+        if((e.type === 'brute' && e.shielded) || e.x < -9e4) continue;
+        const dx = e.x - p.x, dy = e.y - p.y, dz = e.z - p.z, d = len(dx, dy, dz);
+        if(d > 750 || d < 15) continue;
+        const a = Math.acos(clamp((dx * f.x + dy * f.y + dz * f.z) / d, -1, 1));
+        if(a < bestA){ bestA = a; p.lock = e.id; }
+      }
+      if(p.lock) ev(s, 'lock');
+    }
+  } else p.lock = null;
+  // bombs go straight: no lock
   if(inp.bomb && p.bombs > 0){
     p.bombs--; s.stats.bombs++;
-    if(p.lock){
-      s.missiles.push({x: p.x, y: p.y - 1, z: p.z, fx: f.x, fy: f.y, fz: f.z, speed: 150, target: p.lock, life: 5});
-      ev(s, 'missile');
-    } else {
-      s.bombs.push({x: p.x, y: p.y - 1, z: p.z, vx: f.x * 170 + p.vx * 0.5, vy: f.y * 170 + p.vy * 0.5, vz: f.z * 170 + p.vz * 0.5, life: 1.3});
-      ev(s, 'missile');
-    }
+    s.bombs.push({x: p.x, y: p.y - 1, z: p.z, vx: f.x * 170 + p.vx * 0.5, vy: f.y * 170 + p.vy * 0.5, vz: f.z * 170 + p.vz * 0.5, life: 1.3});
+    ev(s, 'missile');
   }
 
   // anybody sitting on your tail?
@@ -786,16 +842,22 @@ function projectiles(s, dt){
   s.bolts = s.bolts.filter(b => b.life > 0);
 
   for(const m of s.missiles){
+    // charged shots: fast, homing if they have a lock, and they burst
     m.life -= dt;
-    const e = s.enemies.find(e => e.id === m.target);
+    const e = m.target && s.enemies.find(e => e.id === m.target);
     const f = {x: m.fx, y: m.fy, z: m.fz};
-    if(e) turnToward(f, norm({x: e.x - m.x, y: e.y - m.y, z: e.z - m.z}), 4 * dt);
+    if(e) turnToward(f, norm({x: e.x - m.x, y: e.y - m.y, z: e.z - m.z}), 5 * dt);
     m.fx = f.x; m.fy = f.y; m.fz = f.z;
-    m.speed = Math.min(260, m.speed + 120 * dt);
-    m.x += f.x * m.speed * dt; m.y += f.y * m.speed * dt; m.z += f.z * m.speed * dt;
-    if(e && len(e.x - m.x, e.y - m.y, e.z - m.z) < e.r + 3){ m.life = 0; blast(s, m.x, m.y, m.z, 25, 10, e); }
-    else if(m.y < height(m.x, m.z) || hitObstacle(m.x, m.y, m.z, 0.5)){ m.life = 0; blast(s, m.x, m.y, m.z, 30, 8); }
-    else if(m.life <= 0) blast(s, m.x, m.y, m.z, 30, 8);
+    const nx = m.x + f.x * m.speed * dt, ny = m.y + f.y * m.speed * dt, nz = m.z + f.z * m.speed * dt;
+    let hit = null;
+    for(const q of s.enemies){
+      if(q.x < -9e4) continue;
+      const r = q.r + 2.5;
+      if(segDist2(m.x, m.y, m.z, nx, ny, nz, q.x, q.y, q.z) < r * r){ hit = q; break; }
+    }
+    m.x = nx; m.y = ny; m.z = nz;
+    if(hit){ m.life = 0; s.stats.hits++; blast(s, m.x, m.y, m.z, CHARGE.blast, CHARGE.dmg, hit, 'charge'); }
+    else if(m.y < height(m.x, m.z) || hitObstacle(m.x, m.y, m.z, 0.5) || m.life <= 0){ m.life = 0; blast(s, m.x, m.y, m.z, CHARGE.blast, 4, null, 'charge'); }
   }
   s.missiles = s.missiles.filter(m => m.life > 0);
   for(const b of s.bombs){
@@ -808,8 +870,8 @@ function projectiles(s, dt){
   }
   s.bombs = s.bombs.filter(b => b.life > 0);
 }
-function blast(s, x, y, z, R, dmg, direct){
-  ev(s, 'bomb', {x, y, z, r: R});
+function blast(s, x, y, z, R, dmg, direct, kind){
+  ev(s, kind === 'charge' ? 'burst' : 'bomb', {x, y, z, r: R});
   if(direct) hurtEnemy(s, direct, dmg, x, y, z);
   for(const e of s.enemies){
     if(e === direct || e.hp <= 0) continue;
@@ -841,7 +903,7 @@ function pickups(s, dt){
    page lets it fly for you. skill 0..1: how quick and how accurate. */
 export function autopilot(s, skill){
   skill = skill == null ? 0.8 : skill;
-  const p = s.p, inp = {sx: 0, sy: 0, fire: false, boost: false, brake: false, bomb: false, roll: 0, uturn: false};
+  const p = s.p, inp = {sx: 0, sy: 0, sr: 0, fire: false, boost: false, brake: false, bomb: false, roll: 0, loop: false, uturn: false};
   if(p.dead || s.phase === 'won') return inp;
   const r = s.rand;   // shares the game's dice so a run is repeatable
   // a dodge, if something is about to hit
@@ -849,8 +911,20 @@ export function autopilot(s, skill){
     const dx = p.x - b.x, dy = p.y - b.y, dz = p.z - b.z, d = len(dx, dy, dz);
     if(d < 45 && (dx * b.vx + dy * b.vy + dz * b.vz) / (d * BOLT_SPEED) > 0.97 && r() < skill * 0.5){ inp.roll = r() < 0.5 ? -1 : 1; break; }
   }
+  if(p.man) return inp;
   if(s.mode === 'rail') return railPilot(s, inp, skill);
   return freePilot(s, inp, skill);
+}
+/* The trigger, as a person works it: about six taps a second when lined
+   up, or hold to charge, wait for the lock, and let go. */
+function trigger(s, inp, shoot, charge){
+  const p = s.p, ap = s.ap || (s.ap = {charging: false});
+  if(ap.charging){
+    const done = (p.charge >= 1 && p.lock) || p.holdT > 2.6;
+    inp.fire = !done;
+    if(done) ap.charging = false;
+  } else if(charge){ ap.charging = true; inp.fire = true; }
+  else inp.fire = !!shoot && Math.floor(s.t * 12) % 2 === 0;
 }
 function railPilot(s, inp, skill){
   const p = s.p, R = p.rail;
@@ -891,7 +965,7 @@ function railPilot(s, inp, skill){
   const jit = (1 - skill) * 4;
   inp.sx = clamp((tox - R.ox) * 0.09 * (0.6 + skill * 0.6) - R.vx * 0.02 + (s.rand() - 0.5) * jit * 0.05, -1, 1);
   inp.sy = clamp((toy - R.oy) * 0.09 * (0.6 + skill * 0.6) - R.vy * 0.02, -1, 1);
-  inp.fire = aimed || (best && s.rand() < 0.3);
+  trigger(s, inp, aimed || (best && bd < 300 && s.rand() < 0.3), false);
   return inp;
 }
 function freePilot(s, inp, skill){
@@ -926,17 +1000,19 @@ function freePilot(s, inp, skill){
     inp.sx = clamp(err * 2.4, -1, 1);
     inp.sy = clamp((Math.asin(clamp(d.y, -1, 1)) - p.pitch) * 3, -1, 1);
   } else {
+    // full: point the nose with turn and pitch, and keep the wings level with the roll
     const u = {x: p.ux, y: p.uy, z: p.uz}, rt = cross(f, u);
     const lx = dot(d, rt), ly = dot(d, u), lz = dot(d, f);
-    const rollErr = Math.atan2(lx, Math.max(0.05, ly));
-    inp.sx = clamp(rollErr * 1.6, -1, 1);
-    inp.sy = clamp(Math.atan2(ly, lz) * 2.5, -1, 1) * (Math.abs(rollErr) < 0.9 || lz < 0 ? 1 : 0.2);
-    // keep the right way up when there's nothing to chase
-    if(a < 0.3 && u.y < 0.3) inp.sx = clamp(Math.atan2(dot({x: 0, y: 1, z: 0}, rt), u.y) * 1.5, -1, 1);
+    inp.sx = clamp(Math.atan2(lx, Math.max(0.1, lz)) * 2.5, -1, 1);
+    inp.sy = clamp(Math.atan2(ly, Math.max(0.1, lz)) * 2.5, -1, 1);
+    if(lz < 0) inp.sy = 1;
+    inp.sr = clamp(Math.atan2(rt.y, u.y) * 1.5, -1, 1);
   }
-  if(best && dot(f, d) < -0.4 && bd > 140 && !p.uturn && s.rand() < skill * 0.03) inp.uturn = true;
+  if(best && dot(f, d) < -0.4 && bd > 140 && !p.man && s.rand() < skill * 0.03) inp.uturn = true;
+  if(p.behind > 0.5 && !p.man && s.rand() < skill * 0.02) inp.loop = true;
   inp.boost = bd > 520;
-  inp.fire = best && a < 0.06 + (1 - skill) * 0.04 && bd < 450;
-  if(best && p.lock === best.id && (best.type === 'pod' || best.type === 'brute') && p.bombs > 0 && s.rand() < 0.01) inp.bomb = true;
+  const big = best && (best.type === 'pod' || best.type === 'brute' || best.type === 'raider');
+  trigger(s, inp, best && a < 0.06 + (1 - skill) * 0.04 && bd < 450, big && a < 0.3 && bd < 600 && s.rand() < 0.02 * skill);
+  if(best && (best.type === 'pod' || best.type === 'brute') && a < 0.05 && bd < 250 && p.bombs > 0 && s.rand() < 0.01) inp.bomb = true;
   return inp;
 }

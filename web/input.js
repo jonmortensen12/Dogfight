@@ -1,20 +1,23 @@
 /* Dogfight - the controls.
 
-   The phone is held sideways in both hands like a game controller. It is
-   the stick:
-     - turn it like a steering wheel to steer (roll, about the line of sight)
-     - tip the top edge away to dive, towards you to climb (like pushing
-       and pulling a stick; "invert" swaps it)
-   Both are measured from where the phone was held when it was CENTRED,
-   so any comfortable grip works: lying back on the couch, sitting up.
+   The phone is held sideways in both hands like a game controller, and it
+   is a little model of the ship: point the phone and the nose follows.
+     - pull the LEFT side of the phone towards you (turn it about its own
+       up-and-down line) to turn left, the right side to turn right
+     - tip the top edge away to dive, towards you to climb
+     - turn it like a steering wheel to ROLL the ship
+   All three are measured from the grip the phone was in when it was
+   CENTRED, so lying back on the couch or sitting up both work.
 
-   Only gravity is used (where "up" is, seen from the screen). The compass
-   heading the sensor also reports wanders on phones and means nothing
-   here, so it is thrown away.
+   Turning left and right is a rotation about the phone's own vertical
+   line, which gravity cannot see when the phone is upright, so this uses
+   the whole orientation the phone reports, not just "which way is down".
+   That reading wanders slowly on some phones; small leftovers near the
+   centre are bled away, and CENTRE resets it outright.
 
-   Thumbs: left - BOOST, BRAKE (and U-TURN when flying free); right - FIRE
-   (hold), BOMB, and TARGET when flying free. A quick swipe anywhere else
-   is a barrel roll that way.
+   Thumbs: left - BOOST, BRAKE, LOOP (and U-TURN when flying free); right -
+   FIRE (tap to shoot, hold to charge), BOMB, TARGET when flying free. A
+   quick sideways swipe anywhere else is a barrel roll that way.
 
    No motion sensor (a laptop, or permission refused): the left thumb
    drags a stick instead, and the keyboard works too. */
@@ -29,8 +32,9 @@ export class Input {
     this.root = root;
     this.sensorQ = new THREE.Quaternion();
     this.gyro = false; this.lastSensor = 0;
-    this.steer = 0; this.pitch = 0;        // radians, raw
-    this.steer0 = 0; this.pitch0 = 0.6;    // the centre
+    this.q0 = new THREE.Quaternion();      // the centred grip
+    this.centred = false;
+    this.yaw = 0; this.pitch = 0; this.roll = 0;   // radians, from the centred grip
     this.sens = 1; this.invert = false;
     this.held = {};                        // buttons held
     this.press = {};                       // one-shot presses since the last read
@@ -45,17 +49,13 @@ export class Input {
       this.gyro = true; this.lastSensor = performance.now();
       eul.set(e.beta * D, (e.alpha || 0) * D, -e.gamma * D, 'YXZ');
       this.sensorQ.setFromEuler(eul).multiply(q1).multiply(qs.setFromAxisAngle(ZEE, -screenAngle()));
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.sensorQ.clone().invert());
-      // up, seen from the screen: x across, y up the screen, z out of it
-      // the wheel angle, however far back the phone is tipped
-      this.steer = Math.atan2(-up.x, up.y);
-      this.pitch = Math.atan2(up.z, up.y);
-      if(this.autoCentre){ this.centre(); this.autoCentre = false; }
+      if(!this.centred){ this.centre(); }
+      this.measure();
     });
     addEventListener('keydown', e => {
       if(e.repeat) return;
       this.keys[e.code] = true;
-      const map = {Space: 'fire', KeyX: 'bomb', KeyB: 'bomb', KeyQ: 'rollL', KeyE: 'rollR', KeyC: 'uturn', KeyT: 'target', KeyP: 'pause', Escape: 'pause'};
+      const map = {Space: 'fire', KeyX: 'bomb', KeyB: 'bomb', KeyQ: 'rollL', KeyE: 'rollR', KeyL: 'loop', KeyC: 'uturn', KeyU: 'uturn', KeyT: 'target', KeyP: 'pause', Escape: 'pause'};
       if(map[e.code]) this.press[map[e.code]] = true;
       if(e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     });
@@ -75,7 +75,19 @@ export class Input {
   }
 
   live(){ return this.gyro && performance.now() - this.lastSensor < 1000; }
-  centre(){ this.steer0 = this.steer; this.pitch0 = this.pitch; }
+  centre(){ this.q0.copy(this.sensorQ); this.centred = true; this.measure(); }
+  /* The turn from the centred grip, in the screen's own axes (x across,
+     y up the screen, z out of it towards you): yaw about y, then pitch
+     about x, then roll about z. */
+  measure(){
+    const rel = this.q0.clone().invert().multiply(this.sensorQ);
+    const e = new THREE.Euler().setFromQuaternion(rel, 'YXZ');
+    this.yaw = e.y; this.pitch = e.x; this.roll = e.z;
+    // bleed away slow wander in the turn while it is close to centre
+    const now = performance.now(), dt = Math.min(0.1, (now - (this.lastBleed || now)) / 1000);
+    this.lastBleed = now;
+    if(Math.abs(this.yaw) < 4 * D && dt > 0) this.q0.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw * Math.min(1, dt * 0.25)));
+  }
 
   bindButtons(){
     for(const el of this.root.querySelectorAll('[data-btn]')){
@@ -125,32 +137,36 @@ export class Input {
     z.addEventListener('pointercancel', end);
   }
 
-  /* The stick and the buttons, as the sim wants them. */
+  /* The stick and the buttons, as the sim wants them:
+     sx turn (right +), sy nose (up +), sr roll (right +), all -1..1. */
   read(){
     const k = this.keys, h = this.held;
-    let sx = 0, sy = 0;
+    let sx = 0, sy = 0, sr = 0;
     if(this.live()){
-      const range = 22 * D / this.sens, prange = 20 * D / this.sens, dead = 2 * D;
+      const sv = this.sens, dead = 2 * D;
       const shape = (v, r) => { const a = Math.max(0, Math.abs(v) - dead) / r; const c = Math.min(1, a); return Math.sign(v) * (0.35 * c + 0.65 * c * c); };
-      sx = shape(this.steer - this.steer0, range);
-      sy = -shape(this.pitch - this.pitch0, prange) * (this.invert ? -1 : 1);
+      sx = -shape(this.yaw, 20 * D / sv);                         // left side closer: yaw +, turn left
+      sy = shape(this.pitch, 20 * D / sv) * (this.invert ? -1 : 1);   // top towards you: pitch +, climb
+      sr = -shape(this.roll, 32 * D / sv);                        // wheel clockwise: roll -, roll right
     }
     if(this.drag){
       const r = Math.min(innerWidth, innerHeight) * 0.16;
       sx = Math.max(-1, Math.min(1, this.drag.dx / r));
       sy = Math.max(-1, Math.min(1, -this.drag.dy / r)) * (this.invert ? -1 : 1);
     }
-    const kx = (k.ArrowRight || k.KeyD ? 1 : 0) - (k.ArrowLeft || k.KeyA ? 1 : 0);
+    const kx = (k.ArrowRight ? 1 : 0) - (k.ArrowLeft ? 1 : 0);
     const ky = (k.ArrowUp || k.KeyW ? 1 : 0) - (k.ArrowDown || k.KeyS ? 1 : 0);
+    const kr = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
     if(kx) sx = kx;
     if(ky) sy = ky * (this.invert ? -1 : 1);
+    if(kr) sr = kr;
     const p = this.press;
     const out = {
-      sx, sy,
-      fire: !!(h.fire || k.Space),
+      sx, sy, sr,
+      fire: !!(h.fire || k.Space || p.fire),     // a tap between two frames still counts
       boost: !!(h.boost || k.ShiftLeft || k.ShiftRight),
       brake: !!(h.brake || k.KeyZ || k.ControlLeft),
-      bomb: !!p.bomb, uturn: !!p.uturn, target: !!p.target, pause: !!p.pause, centre: !!p.centre,
+      bomb: !!p.bomb, loop: !!p.loop, uturn: !!p.uturn, target: !!p.target, pause: !!p.pause, centre: !!p.centre,
       roll: p.rollR ? 1 : p.rollL ? -1 : 0,
     };
     this.press = {};
