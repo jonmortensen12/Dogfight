@@ -1,0 +1,14 @@
+{
+  "name": "dogfight",
+  "compatibility_date": "2026-10-01",
+
+  // A URL on the workers.dev subdomain, said outright rather than left to a
+  // dashboard toggle (Dry Fly and Night Watch both hit "no URLs enabled").
+  "workers_dev": true,
+
+  // Only web/ is uploaded - the checks and the notes beside it stay in the
+  // repo and off the internet. No worker.js: every path is a plain file.
+  "assets": {
+    "directory": "web"
+  }
+}
