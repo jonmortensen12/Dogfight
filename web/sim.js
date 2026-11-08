@@ -50,11 +50,13 @@ export const HANDLING = {railX: 60, railY: 46, railAccel: 9, levelTurn: 2.1, lev
 const PICKUP_R = 11;
 /* A wingmate's shot does half what Teddy's does: they help, he wins. */
 const ALLY_DMG = 0.5;
-const SHOT_SPEED = 430, BOLT_SPEED = 125;
+// lasers fly about four times the ship's rail speed (Star Fox 64's fly 3.3x
+// its Arwing's): fast, but you can watch them go
+const SHOT_SPEED = 300, BOLT_SPEED = 125;
 const SHIP_R = 2.2;
 /* The charged shot: starts charging after holding FIRE this long, full after
    this much more; locks within this cone (radians); its hit and burst. */
-export const CHARGE = {start: 0.22, time: 0.75, cone: 0.21, dmg: 7, blast: 30};
+export const CHARGE = {start: 0.22, time: 0.75, cone: 0.21, dmg: 7, blast: 42};
 /* The combo: anything a charged burst destroys goes off too (CHAIN.blast m,
    CHAIN.dmg), so a pack of fighters goes up together, and every kill past
    the first in one chain is a bonus hit, as in the old rail shooters. */
@@ -150,6 +152,7 @@ export function newSim(opts){
   const pace = clamp(+opts.pace || 1, 0.5, 2.5);
   const s = {
     level: id, L, t: 0, skill: sk, K: SKILLS[sk], style: opts.style === 'full' ? 'full' : 'level', pace,
+    steer: opts.steer === 'slide' ? 'slide' : 'point',
     rand: rng(opts.seed || 7), nextId: 1,
     phase: 'rail', mode: 'rail', wave: 0, waveT: 0, clearT: 0, done: false, failed: false, failWhy: '',
     p: null, enemies: [], shots: [], bolts: [], missiles: [], bombs: [], pickups: [], events: [], hazards: [], allies: [],
@@ -160,10 +163,12 @@ export function newSim(opts){
     secret: L.secret ? {type: L.secret.type, need: L.secret.need || 1, got: 0, done: false} : null,
   };
   setBranch(0);
-  const u0 = opts.start === 'arena' ? (L.railBossU || RAIL_END) - 160 : 0;
+  s.cpU = checkpointU(L);
+  const mid = opts.start === 'mid' && s.cpU && opts.carry;
+  const u0 = opts.start === 'arena' ? (L.railBossU || RAIL_END) - 160 : mid ? s.cpU : 0;
   s.p = {
     x: 0, y: 30, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0, vx: 0, vy: 0, vz: 0,
-    speed: SPEED.rail * pace, shield: 100, boost: 1, bombs: 3, twin: false,
+    speed: SPEED.rail * pace, shield: 100, maxShield: 100, boost: 1, bombs: 3, twin: false,
     rail: {u: u0, ox: 0, oy: GROUND === 'space' ? 10 : 30, vx: 0, vy: 0, side: 0},
     yaw: 0, pitch: 0, bank: 0, rollT: 0, rollDir: 0, spin: 0, man: null, charge: 0, holdT: 0, fireHeld: false,
     hitT: 0, fireT: 0, lock: null, dead: false, deadT: 0, behind: 0, confused: 0,
@@ -180,8 +185,28 @@ export function newSim(opts){
   else {
     buildScript(s, u0);
     if(opts.start === 'arena') say(s, 'rosie', 'Starting you near the end of the rail, {teddy}.', 2.5);
+    if(mid){
+      // back at the checkpoint, with what you had when you passed it
+      const c = opts.carry;
+      s.stats.kills = c.kills; s.stats.combo = c.combo; s.stats.gold = c.gold; s.stats.goldTotal = c.goldTotal;
+      if(s.secret) s.secret.got = c.secretGot;
+      s.cpPassed = c;
+      say(s, 'rosie', 'Back at the checkpoint. Shake it off, {teddy}!', 2.2);
+    }
   }
   return s;
+}
+/* The checkpoint (Star Fox 64 has one halfway down each rail: pass it and a
+   crash sends you back there, not to the start). Halfway along the rail,
+   kept clear of a fork and of a boss the rail runs into; none on a level
+   that starts in the clearing. L.checkpoint overrides it. */
+export function checkpointU(L){
+  if(L.start === 'arena') return 0;
+  if(L.checkpoint != null) return L.checkpoint;
+  const end = Math.min(L.railChase ? L.railChase.u : 1e9, L.railBossU || 1e9, L.railEnd || 1e9);
+  let u = Math.round(end * 0.5 / 50) * 50;
+  if(L.fork && u > L.fork.u0 - 250 && u < L.fork.u1 + 150) u = L.fork.u0 - 250;
+  return u > 600 && u < end - 400 ? u : 0;
 }
 
 function ev(s, k, o){ o = o || {}; o.k = k; s.events.push(o); return o; }
@@ -242,15 +267,42 @@ function newEnemy(s, type, o){
 function formation(s, n, u, o){
   const base = GROUND === 'space' ? 0 : 24;
   const slots = [[0, 6], [-14, 14], [14, 14], [-28, 22], [28, 22]];
+  const group = squad(s, n);
   for(let i = 0; i < n; i++){
-    newEnemy(s, 'dart', {state: 'oncoming', ru: u + i * 18, rox: slots[i][0] * (n > 3 ? 1 : 1.3), roy: base + slots[i][1], rail: true});
+    newEnemy(s, 'dart', {state: 'oncoming', ru: u + i * 18, rox: slots[i][0] * (n > 3 ? 1 : 1.3), roy: base + slots[i][1], rail: true, group});
   }
+}
+/* A squad: shoot down every one of them yourself and the last one drops a
+   present (Star Fox 64's group drops: a whole formation is worth an item). */
+function squad(s, n){
+  if(n < 3) return 0;
+  const id = s.nextId++;
+  (s.squads || (s.squads = {}))[id] = {n, got: 0};
+  return id;
+}
+function drop(s, type, e){
+  // on the rail it lands a little ahead, where you'll be
+  let x = e.x, y = e.y, z = e.z, u = -z;
+  if(s.mode === 'rail'){
+    const q = railPoint(Math.max(e.ru || 0, s.p.rail.u + 70), clamp(e.rox != null ? e.rox : s.p.rail.ox, -halfW(s.p.rail.u) + WALL_MARGIN, halfW(s.p.rail.u) - WALL_MARGIN), 0);
+    u = Math.max(e.ru || 0, s.p.rail.u + 70); x = q.x; z = q.z; y = clamp(e.y, RAIL_FLOOR + 6, RAIL_TOP - 6);
+  }
+  s.pickups.push({id: s.nextId++, type, x, y, z, u, taken: false, t: 0, dropped: true});
+  ev(s, 'drop', {type, x, y, z});
+}
+/* What a squad or a milestone gives: what you need most. */
+function present(s){
+  const p = s.p;
+  if(p.shield < p.maxShield * 0.6) return 'bone';
+  if(!p.twin) return 'ball';
+  return p.bombs < 3 ? 'bomb' : 'bone';
 }
 function swoop(s, n, type){
   const base = GROUND === 'space' ? -10 : 22;
+  const group = squad(s, n);
   for(let i = 0; i < n; i++){
     const side = i % 2 ? 1 : -1;
-    newEnemy(s, type || 'dart', {state: 'swoopIn', rel: -70 - i * 14, rox: side * (8 + i * 7), roy: base + 48, holdY: base + i * 7, holdX: side * (6 + i * 9), rail: true, t: -i * 0.3});
+    newEnemy(s, type || 'dart', {state: 'swoopIn', rel: -70 - i * 14, rox: side * (8 + i * 7), roy: base + 48, holdY: base + i * 7, holdX: side * (6 + i * 9), rail: true, t: -i * 0.3, group});
   }
 }
 /* Alley Cats on the rail: they swoop in like the others, stay longer, and talk. */
@@ -298,7 +350,10 @@ const SLOTS = {wing1: [-20, 2, 8], wing2: [20, 5, 12], wing3: [-34, 10, 2]};
 function addAlly(s, who, quiet){
   if(s.allies.some(a => a.id === who)) return;
   const p = s.p, sl = SLOTS[who] || [0, 0, -20];
-  const a = {id: who, x: p.x - p.fx * 40, y: p.y + 10, z: p.z - p.fz * 40, fx: p.fx, fy: p.fy, fz: p.fz, bank: 0,
+  // they fly in from behind, out to the side and above the camera (which
+  // sits 38 m back) rather than through it
+  const rx = -p.fz, rz = p.fx, side = sl[0] >= 0 ? 1 : -1;
+  const a = {id: who, x: p.x - p.fx * 60 + rx * side * 30, y: p.y + 24, z: p.z - p.fz * 60 + rz * side * 30, fx: p.fx, fy: p.fy, fz: p.fz, bank: 0,
     vx: 0, vy: 0, vz: 0, hp: 100, slot: sl, fireT: 1, t: 0, gone: false, goneT: 0, chased: null, ffT: 0, giftT: 0, target: null};
   s.allies.push(a);
   if(!quiet){ s.joined.push(who); ev(s, 'join', {who}); sayAlly(s, who, 'hello'); }
@@ -706,6 +761,12 @@ export function step(s, dt, inp){
   if(s.mode === 'rail'){
     while(s.script.length && s.script[0].u <= p.rail.u){ const S1 = s.script.shift(); if(!S1.branch || (S1.branch === 'alt') === (s.branch === 1)) S1.fn(); }
     fork(s);
+    if(s.cpU && !s.cpPassed && !p.dead && p.rail.u >= s.cpU){
+      s.cpPassed = {kills: s.stats.kills, combo: s.stats.combo || 0, gold: s.stats.gold, goldTotal: s.stats.goldTotal,
+        secretGot: s.secret ? s.secret.got : 0, allies: s.allies.filter(a => !a.gone).map(a => a.id)};
+      p.shield = Math.min(p.maxShield, p.shield + 50);   // and a top-up, as Star Fox 64's ring gives
+      ev(s, 'checkpoint');
+    }
     if(!p.dead && !s.railHold && s.phase === 'rail'){
       if(s.L.railChase && p.rail.u >= s.L.railChase.u) startChase(s);
       else if(s.L.railBossU && p.rail.u >= s.L.railBossU) startRailBoss(s);
@@ -792,6 +853,10 @@ function enemies(s, dt){
   });
 }
 /* ---------- flying: the rail ---------- */
+/* Pointing on the rail: the furthest the nose turns (rad), how fast it
+   eases there (/s) and its fastest turn (rad/s), and the sideways speed
+   at full point as a share of forward speed / sin(angle). */
+export const POINT = {max: 0.94, ease: 3.2, rate: 1.2, side: 1.4};
 export const LOOP = {railR: 24, railDur: 1.9, freeDur: 2.2, uturnUp: 1.1, uturnRoll: 0.55};
 function flyRail(s, dt, inp){
   const p = s.p, r = p.rail;
@@ -808,11 +873,32 @@ function flyRail(s, dt, inp){
   p.speed += (want - p.speed) * Math.min(1, 2.5 * dt);
   if(!s.railHold) r.u += p.speed * dt;
   const sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1);
-  // banked into the slide (wheel or bank button), it slides faster: a tight turn
   const lean = clamp(p.bank / 1.3, -1, 1);
-  const tight = 1 + HANDLING.bankBoost * Math.max(0, sx * lean > 0 ? Math.abs(lean) : 0);
-  r.vx += (sx * HANDLING.railX * tight - r.vx) * Math.min(1, HANDLING.railAccel * dt);
-  r.vy += (sy * HANDLING.railY - r.vy) * Math.min(1, HANDLING.railAccel * dt);
+  if(s.steer === 'point'){
+    // POINT (as Star Fox 64 flies its rail): the stick aims the nose, up to
+    // 54 degrees off the rail, and the ship goes where it points - sideways
+    // at up to 1.4 x speed x sin(angle). The nose swings there at 10% of
+    // the way a 30th of a second, but no faster than 69 deg/s; banked into
+    // the turn, twice that; in a barrel roll, three times.
+    const A = POINT.max, k = 1 - Math.exp(-POINT.ease * dt);
+    const into = Math.abs(p.bank) > 0.17 && sx * p.bank > 0;
+    const cap = POINT.rate * (p.rollT > 0 ? 3 : into ? 2 : 1) * dt;
+    r.aYaw = (r.aYaw || 0) + clamp((sx * A - (r.aYaw || 0)) * k, -cap, cap);
+    // near the floor the nose won't go down (it eases up instead)
+    const q0 = railPoint(r.u, r.ox, 0), low = r.oy < Math.max(RAIL_FLOOR, height(q0.x, q0.z) + 4) + 8;
+    const pt = low && sy < 0 ? 0 : sy * A;
+    const capP = POINT.rate * (low ? 2 : 1) * dt;
+    r.aPitch = (r.aPitch || 0) + clamp((pt - (r.aPitch || 0)) * k, -capP, capP);
+    const v = p.speed * POINT.side;
+    r.vx = v * Math.sin(r.aYaw); r.vy = v * Math.sin(r.aPitch);
+  } else {
+    // SLIDE: the stick slides the ship about the box; banked into the slide
+    // (wheel or bank button), it slides faster: a tight turn
+    const tight = 1 + HANDLING.bankBoost * Math.max(0, sx * lean > 0 ? Math.abs(lean) : 0);
+    r.vx += (sx * HANDLING.railX * tight - r.vx) * Math.min(1, HANDLING.railAccel * dt);
+    r.vy += (sy * HANDLING.railY - r.vy) * Math.min(1, HANDLING.railAccel * dt);
+    r.aYaw = r.aPitch = 0;
+  }
   // a roll is a sidestep too - kept apart from the stick's sliding so the
   // nose does not swing with it
   if(p.rollT > 0) r.side += p.rollDir * 48 * dt;
@@ -822,11 +908,16 @@ function flyRail(s, dt, inp){
   if(r.ox > lim){ r.ox = lim; r.vx = Math.min(0, r.vx); r.side = Math.min(0, r.side); }
   if(r.ox < -lim){ r.ox = -lim; r.vx = Math.max(0, r.vx); r.side = Math.max(0, r.side); }
   if(r.oy > RAIL_TOP){ r.oy = RAIL_TOP; r.vy = Math.min(0, r.vy); }
+  // pointing into a wall: the nose comes back round (it slides along)
+  if(s.steer === 'point'){
+    if(Math.abs(r.ox) >= lim && r.aYaw * r.ox > 0) r.aYaw *= Math.exp(-6 * dt);
+    if(r.oy >= RAIL_TOP && r.aPitch > 0) r.aPitch *= Math.exp(-6 * dt);
+  }
   const q = railPoint(r.u, r.ox, 0);
   const floor = Math.max(RAIL_FLOOR, height(q.x, q.z) + 4);
   if(r.oy < floor){ r.oy = floor; r.vy = Math.max(0, r.vy); }
   // the wheel rolls the ship; sliding sideways leans it a little too
-  const bankT = clamp((inp.sr || 0) * 1.57 + r.vx / HANDLING.railX * 0.35, -1.6, 1.6);
+  const bankT = clamp((inp.sr || 0) * 1.57 + clamp(r.vx / HANDLING.railX, -1.3, 1.3) * 0.35, -1.6, 1.6);
   p.bank += (bankT - p.bank) * Math.min(1, 8 * dt);
   placeRail(s, dt);
 }
@@ -1017,7 +1108,7 @@ function ship(s, dt, inp){
       const guns = p.twin ? [-1.7, 1.7] : [0];
       for(const o of guns){
         s.shots.push({x: p.x + f.x * 3 + side.x * o, y: p.y + f.y * 3 + side.y * o - 0.3, z: p.z + f.z * 3 + side.z * o,
-          vx: d.x * SHOT_SPEED * s.pace + p.vx, vy: d.y * SHOT_SPEED * s.pace + p.vy, vz: d.z * SHOT_SPEED * s.pace + p.vz, life: 1.15});
+          vx: d.x * SHOT_SPEED * s.pace + p.vx, vy: d.y * SHOT_SPEED * s.pace + p.vy, vz: d.z * SHOT_SPEED * s.pace + p.vz, life: 1.65});
         s.stats.shots++;
       }
       ev(s, 'fire', {twin: p.twin});
@@ -1382,7 +1473,7 @@ function distP2(a, e){ return len(e.x - a.x, e.y - a.y, e.z - a.z); }
 function allyShot(s, a, e){
   const t = distP2(a, e) / (SHOT_SPEED * s.pace);
   const d = norm({x: e.x + (e.vx || 0) * t - a.x + (s.rand() - 0.5) * 6, y: e.y + (e.vy || 0) * t - a.y + (s.rand() - 0.5) * 6, z: e.z + (e.vz || 0) * t - a.z + (s.rand() - 0.5) * 6});
-  s.shots.push({x: a.x + d.x * 3, y: a.y + d.y * 3, z: a.z + d.z * 3, vx: d.x * SHOT_SPEED * s.pace + a.vx, vy: d.y * SHOT_SPEED * s.pace + a.vy, vz: d.z * SHOT_SPEED * s.pace + a.vz, life: 1.0, ally: a.id});
+  s.shots.push({x: a.x + d.x * 3, y: a.y + d.y * 3, z: a.z + d.z * 3, vx: d.x * SHOT_SPEED * s.pace + a.vx, vy: d.y * SHOT_SPEED * s.pace + a.vy, vz: d.z * SHOT_SPEED * s.pace + a.vz, life: 1.4, ally: a.id});
   ev(s, 'allyFire', {x: a.x, y: a.y, z: a.z});
 }
 function hurtAlly(s, a, n){
@@ -1418,7 +1509,19 @@ function hurtEnemy(s, e, n, x, y, z, by){
     else if(s.stats.rescued % 2 === 1) say(s, 'teddy', ['Go on, pups - run home!', 'You are free, little guy!', 'Out you come!'][s.stats.rescued % 3], 1.8);
     return;
   }
-  if(!by) s.stats.kills++;
+  if(!by){
+    s.stats.kills++;
+    // a whole squad down: a present
+    const q = e.group && s.squads && s.squads[e.group];
+    if(q && ++q.got === q.n){ drop(s, present(s), e); say(s, 'rosie', 'Whole squad down! They dropped something.', 1.8); }
+    // milestones in the clearing (Star Fox 64 drops a gold ring on its 5th,
+    // 10th, 20th and 30th kills in all-range mode, lasers on the 15th)
+    if(s.mode === 'free' && (e.type === 'dart' || e.type === 'raider' || e.type === 'ace')){
+      s.freeKills = (s.freeKills || 0) + 1;
+      const m = {5: 'bone', 10: 'bomb', 15: 'ball', 20: 'bone', 30: 'bone'}[s.freeKills];
+      if(m) drop(s, m === 'ball' && s.p.twin ? 'bomb' : m, e);
+    }
+  }
   if(e.type === 'part') say(s, 'teddy', {pod: 'Got an engine!', gun: 'One gun down!', rod: 'Rod down!', lock: 'Lock smashed!', vent: 'Vent plugged!', petal: 'Petal popped!', panel: 'Panel down!', paw: 'Paw down! Ha!', engine: 'Engine down!'}[e.kind] || 'Got it!', 1.6);
   if(e.type === 'ace' && e.who){
     const L = {ace1: "Grr! I'll get you next time, dog!", ace2: 'Ack! Hairball!', ace3: 'How DARE you. This fur was groomed!', ace4: 'Not bad, pup. Not bad...'};
@@ -1542,7 +1645,12 @@ function chain(s, killed, x, y, z){
     const bonus = n - 1;
     s.stats.kills += bonus; s.stats.combo = (s.stats.combo || 0) + bonus;
     ev(s, 'combo', {n: bonus, x, y, z});
-    if(n >= 3) say(s, 'teddy', ['Woof! Got the whole pack!', 'Look at them all go!', 'Combo! Good boy, me!'][n % 3], 1.8);
+    // seven or more in one shot: a wingmate notices (Star Fox 64 does this at +7)
+    const fan = s.allies.filter(a => !a.gone);
+    if(n >= 7 && fan.length){
+      const a = fan[Math.floor(s.rand() * fan.length)];
+      say(s, a.id, ['WOW! Did everyone see that?!', 'Seven in one go! Teach me that!', "That's my squad leader! Best boy!"][n % 3], 2.2);
+    } else if(n >= 3) say(s, 'teddy', ['Woof! Got the whole pack!', 'Look at them all go!', 'Combo! Good boy, me!'][n % 3], 1.8);
   }
 }
 
@@ -1553,8 +1661,15 @@ function pickups(s, dt){
     k.t += dt;
     if(len(k.x - p.x, k.y - p.y, k.z - p.z) < (k.type === 'ring' ? 13 : PICKUP_R) && !p.dead){
       k.taken = true;
-      if(k.type === 'bone') { p.shield = Math.min(100, p.shield + 30); for(const a of s.allies) if(!a.gone) a.hp = Math.min(100, a.hp + 20); say(s, 'teddy', 'Mmm, bone. Shields up!', 1.8); }
-      else if(k.type === 'gold') { s.stats.gold++; say(s, 'teddy', 'Golden bone! ' + s.stats.gold + ' of ' + s.stats.goldTotal + '.', 2); }
+      if(k.type === 'bone') { p.shield = Math.min(p.maxShield, p.shield + 30); for(const a of s.allies) if(!a.gone) a.hp = Math.min(100, a.hp + 20); say(s, 'teddy', 'Mmm, bone. Shields up!', 1.8); }
+      else if(k.type === 'gold'){
+        // golden bones work like Star Fox 64's gold rings: each one tops the
+        // shield up a little, and the third makes the shield bigger
+        s.stats.gold++;
+        p.shield = Math.min(p.maxShield, p.shield + 12);
+        if(s.stats.gold === 3 && p.maxShield < 140){ p.maxShield = 140; p.shield = Math.min(140, p.shield + 40); say(s, 'teddy', 'Three golden bones - BIGGER SHIELD!', 2.2); ev(s, 'upgrade'); }
+        else say(s, 'teddy', 'Golden bone! ' + s.stats.gold + ' of ' + s.stats.goldTotal + '.', 2);
+      }
       else if(k.type === 'ball') { p.twin = true; say(s, 'teddy', 'BALL! Twin lasers!', 2); }
       else if(k.type === 'bomb') { p.bombs = Math.min(9, p.bombs + 2); say(s, 'teddy', 'Two more bombs.', 1.6); }
       else if(k.type === 'ring') { secretStep(s, 1); }
@@ -1661,8 +1776,17 @@ function railPilot(s, inp, skill){
   const lim = halfW(R.u) - WALL_MARGIN;
   tox = clamp(tox, -lim, lim); toy = clamp(toy, RAIL_FLOOR + (best && best.type === 'buoy' ? 0 : 3), RAIL_TOP - 2);
   const jit = (1 - skill) * 4;
-  inp.sx = clamp((tox - R.ox) * 0.09 * (0.6 + skill * 0.6) - R.vx * 0.02 + (s.rand() - 0.5) * jit * 0.05, -1, 1);
-  inp.sy = clamp((toy - R.oy) * 0.09 * (0.6 + skill * 0.6) - R.vy * 0.02, -1, 1);
+  if(s.steer === 'point'){
+    // pointing: aim the nose so the slide it makes closes the gap
+    // (the nose takes a moment to swing, so steer for where the ship will be)
+    const g = 1.6 * (0.6 + skill * 0.6), v = s.p.speed * POINT.side, ahead = 0.3;
+    const ang = want => Math.asin(clamp(want / v, -1, 1)) / POINT.max;
+    inp.sx = clamp(ang((tox - R.ox - R.vx * ahead) * g) + (s.rand() - 0.5) * jit * 0.05, -1, 1);
+    inp.sy = clamp(ang((toy - R.oy - R.vy * ahead) * g), -1, 1);
+  } else {
+    inp.sx = clamp((tox - R.ox) * 0.09 * (0.6 + skill * 0.6) - R.vx * 0.02 + (s.rand() - 0.5) * jit * 0.05, -1, 1);
+    inp.sy = clamp((toy - R.oy) * 0.09 * (0.6 + skill * 0.6) - R.vy * 0.02, -1, 1);
+  }
   trigger(s, inp, aimed || (best && bd < 300 && s.rand() < 0.3), false);
   return inp;
 }

@@ -518,3 +518,9 @@ export const MAP = {
   canyon: [0, 1], tidewater: [1, 0], thunder: [1, 2], kennel: [2, 0], frost: [2, 2],
   jungle: [3, 0], yarn: [3, 2], moonfall: [4, 1], scratchpost: [5, 1], lair: [6, 1],
 };
+
+/* Medals (as Star Fox 64 gives one per planet for enough hits: 150 on
+   Corneria, 200 on Meteo...): win with at least this many HITS. Combo bonus
+   hits count. Set a little above what simcheck's sharp computer pilot
+   manages on Good Boy, so a medal means flying better than it. */
+export const MEDALS = {canyon: 45, tidewater: 25, thunder: 30, kennel: 25, frost: 20, jungle: 35, yarn: 20, moonfall: 30, scratchpost: 20, lair: 45};

@@ -225,10 +225,10 @@ export class Hud {
     const bw = Math.round(150 * Math.max(0.85, Math.min(1.25, sm)));
     g.font = font(11); g.fillStyle = 'rgba(255,255,255,0.85)'; g.textBaseline = 'top';
     g.fillText('SHIELD', x0, y0);
-    const sh = p.shield / 100;
-    g.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(g, x0, y0 + 15, bw, 12, 6); g.fill();
+    const sh = p.shield / (p.maxShield || 100), bwS = bw * (p.maxShield || 100) / 100;   // the bar grows with the upgrade
+    g.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(g, x0, y0 + 15, bwS, 12, 6); g.fill();
     g.fillStyle = sh > 0.5 ? '#5cf08a' : sh > 0.25 ? '#ffd040' : '#ff4a3a';
-    roundRect(g, x0, y0 + 15, Math.max(0, bw * sh), 12, 6); g.fill();
+    roundRect(g, x0, y0 + 15, Math.max(0, bwS * sh), 12, 6); g.fill();
     g.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(g, x0, y0 + 32, bw * 0.7, 6, 3); g.fill();
     g.fillStyle = p.boost > 0.25 ? '#7ae6ff' : '#ff9a40'; roundRect(g, x0, y0 + 32, bw * 0.7 * p.boost, 6, 3); g.fill();
     // bombs as little round shells, twin lasers, gold bones

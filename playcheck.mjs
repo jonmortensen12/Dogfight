@@ -122,7 +122,9 @@ const fb = await fire.boundingBox(), bb = await boost.boundingBox();
 // past the count (FIRE does nothing during it), however slow the frames
 await pg.waitForFunction(() => window.__dog.sim.t > 1.5, null, {timeout: 30000});
 const shotsBefore = await pg.evaluate(() => window.__dog.sim.stats.shots);
-for(let i = 0; i < 3; i++){ await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(450); }
+// (each tap once the gun has cooled down from the last: in this slow
+// software-drawn browser half a second can be under a tenth of game time)
+for(let i = 0; i < 3; i++){ await pg.waitForFunction(() => window.__dog.sim.p.fireT <= 0, null, {timeout: 5000}); await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(450); }
 const taps = await pg.evaluate(() => window.__dog.sim.stats.shots) - shotsBefore;
 ok(taps === 3, `three taps of FIRE, three shots (${taps})`);
 await pg.mouse.down();

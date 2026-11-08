@@ -10,7 +10,7 @@
      ?skill=pup|good|top   ?style=full   ?pace=1.5   ?low=1   ?seed=N
      ?auto=1        the computer flies (the checks use this) */
 import {newSim, step, autopilot, SKILLS} from './sim.js';
-import {LEVELS, START, ORDER, MAP} from './levels.js';
+import {LEVELS, START, ORDER, MAP, MEDALS} from './levels.js';
 import {CAST, WINGS, lineFor} from './cast.js';
 import {World} from './world.js';
 import {Hud, drawTeddy, face, nameOf, VOICE} from './hud.js';
@@ -23,14 +23,14 @@ const touch = matchMedia('(pointer: coarse)').matches;
 if(!touch) document.body.classList.add('desktop');
 
 /* ---------- settings, kept on this device ---------- */
-const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon', pace: '1.25', wheel: 'on'};
+const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon', pace: '1.25', wheel: 'on', steer: 'point'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('dogfight') || '{}')); } catch(e){}
 for(const k of ['skill', 'style', 'start', 'pace']) if(qs.get(k)) S[k] = qs.get(k);
 const save = () => { try { localStorage.setItem('dogfight', JSON.stringify(S)); } catch(e){} };
 const AUTO = qs.get('auto') === '1';
 
 /* ---------- the adventure so far ---------- */
-const fresh = () => ({flown: [], joined: ['wing1'], resting: {}, gold: {}, ranks: {}, finished: false, next: null, secrets: []});
+const fresh = () => ({flown: [], joined: ['wing1'], resting: {}, gold: {}, ranks: {}, finished: false, next: null, secrets: [], medals: {}});
 let G = fresh();
 try { const g = JSON.parse(localStorage.getItem('dogfight-save') || 'null'); if(g && g.flown) G = Object.assign(fresh(), g); } catch(e){}
 const saveG = () => { try { localStorage.setItem('dogfight-save', JSON.stringify(G)); } catch(e){} };
@@ -62,7 +62,7 @@ const input = new Input(document.body);
 drawTeddy($('tface').getContext('2d'), 128);
 
 let current = {id: qs.get('level') && LEVELS[qs.get('level')] ? qs.get('level') : START, free: !!qs.get('level')};
-let sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, seed: +qs.get('seed') || 7});
+let sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, steer: S.steer, seed: +qs.get('seed') || 7});
 let state = 'title';
 const view = {target: null};
 window.__dog = {get sim(){ return sim; }, world, hud, input, get state(){ return state; }, get save(){ return G; }, LEVELS};
@@ -81,6 +81,7 @@ for(const c of document.querySelectorAll('.chip')) c.addEventListener('click', (
   if(k === 'invert') S.invert = !S.invert; else S[k] = c.dataset.v;
   if(k === 'style'){ sim.style = S.style; if(sim.mode === 'free'){ sim.p.bank = 0; } }
   if(k === 'pace') sim.pace = +S.pace;
+  if(k === 'steer') sim.steer = S.steer;
   save(); paintChips(); snd.sfx('click');
 });
 paintChips();
@@ -98,7 +99,7 @@ function showTitle(){
   else $('contline').textContent = 'Seven planets. One cat. Lots of good dogs.';
   $('adventure').textContent = G.flown.length && !G.finished ? 'CONTINUE' : 'ADVENTURE';
   $('newgame').classList.toggle('hide', !G.flown.length);
-  if(sim.level !== START || sim.mode !== 'rail'){ sim = newSim({level: START, skill: S.skill, style: S.style, pace: +S.pace}); world.snap = true; }
+  if(sim.level !== START || sim.mode !== 'rail'){ sim = newSim({level: START, skill: S.skill, style: S.style, pace: +S.pace, steer: S.steer}); world.snap = true; }
 }
 $('adventure').onclick = () => { snd.unlock(); if(G.finished){ G = fresh(); saveG(); } showMap(); };
 $('newgame').onclick = () => { if(confirm('Start a new adventure? The planets you have flown will be forgotten.')){ G = fresh(); saveG(); showMap(); } };
@@ -131,7 +132,7 @@ function showMap(){
     const done = G.flown.includes(id), next = nx.includes(id);
     const cls = 'node' + (next ? ' next' : '') + (!done && !next ? ' locked' : '');
     html += `<g class="${cls}" data-id="${id}"><circle class="body" cx="${X(c)}" cy="${Y(r)}" r="${L.final ? 26 : 20}" fill="${colour(id)}" stroke="${done ? '#ffcf9a' : 'rgba(255,255,255,0.4)'}" stroke-width="3"/>`
-      + (done ? `<text x="${X(c)}" y="${Y(r) + 5}">✓</text>` : '')
+      + (done ? `<text x="${X(c)}" y="${Y(r) + 5}">${G.medals[id] ? '🏅' : '✓'}</text>` : '')
       + `<text x="${X(c)}" y="${Y(r) + (L.final ? 44 : 38)}">${L.name}</text>`
       + (L.hard ? `<text x="${X(c)}" y="${Y(r) - 26}" style="fill:#ff9a7a;font-size:10px">HARD</text>` : '') + '</g>';
   }
@@ -184,15 +185,15 @@ $('briefnext').onclick = () => { briefI++; if(briefI >= briefLines.length){ $('b
 $('briefskip').onclick = () => { $('brief').classList.add('hide'); briefDone(); };
 
 /* ---------- starting a level ---------- */
-async function play(from){
+async function play(from, carry){
   snd.unlock();
   if(touch){
     try { await document.documentElement.requestFullscreen({navigationUI: 'hide'}); await screen_lock(); } catch(e){}
   }
   const ok = await Input.ask();
   const startAt = from || (current.free ? S.start : 'canyon');
-  sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, start: startAt === 'arena' ? 'arena' : undefined, hard: !current.free && G.secrets.length >= 2,
-    seed: +qs.get('seed') || (Math.random() * 1e9) | 0, allies: alliesFor(current.id, current.free)});
+  sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, steer: S.steer, start: startAt === 'arena' ? 'arena' : startAt === 'mid' ? 'mid' : undefined, carry, hard: !current.free && G.secrets.length >= 2,
+    seed: +qs.get('seed') || (Math.random() * 1e9) | 0, allies: carry ? carry.allies : alliesFor(current.id, current.free)});
   world.snap = true; view.target = null; document.body.classList.remove('target-on', 'free');
   hud.queue = []; hud.radio = null; hud.banner = null;
   if(AUTO){ go(); return; }
@@ -234,7 +235,9 @@ function finish(won){
   $('rtitle').textContent = won ? `${L.name}: mission complete!` : (sim.failWhy && sim.failWhy !== 'shot down' ? sim.failWhy : 'Teddy\'s down!');
   $('rank').textContent = won ? 'Rank: ' + rank : 'He\'s fine - he bailed out. Again?';
   const mm = Math.floor(st.time / 60), ss = Math.floor(st.time % 60);
-  const rows = [['Time', mm + ':' + String(ss).padStart(2, '0')], ['Shot down', st.kills], ['Accuracy', acc + '%'], ['Golden bones', st.gold + ' / ' + st.goldTotal], ['Damage taken', Math.round(st.damage)]];
+  const target = MEDALS[sim.level], medal = won && target && st.kills >= target;
+  const rows = [['Time', mm + ':' + String(ss).padStart(2, '0')], ['Hits', st.kills + (st.combo ? ` (${st.combo} combo bonus)` : '')],
+    ['Medal', medal ? '🏅 WON!' : `${st.kills} / ${target} hits`], ['Accuracy', acc + '%'], ['Golden bones', st.gold + ' / ' + st.goldTotal], ['Damage taken', Math.round(st.damage)]];
   if(sim.secret) rows.push([sim.L.secret.label || 'Secret', sim.secret.done ? 'FOUND - hard route!' : sim.secret.type === 'fork' ? 'not found' : sim.secret.got + ' / ' + sim.secret.need]);
   if(won && !current.free && !L.final) rows.push(['Next stop', LEVELS[sim.secret && sim.secret.done ? L.next.secret : L.next.normal].name]);
   if(st.rescued) rows.push(['Pups rescued', st.rescued]);
@@ -242,6 +245,8 @@ function finish(won){
   if(sim.downed.length) rows.push(['Gone home to nap', sim.downed.map(w => CAST[w].name).join(', ')]);
   rows.push(['Difficulty', SKILLS[sim.skill].name], ['Speed', sim.pace + '×']);
   $('rtable').innerHTML = rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('');
+  // a medal counts however the planet was flown (adventure or free play)
+  if(medal && !G.medals[current.id]){ G.medals[current.id] = true; saveG(); }
   if(won && !current.free){
     // the adventure moves on: who joined, who is resting
     for(const w of Object.keys(G.resting)) G.resting[w] = Math.max(0, G.resting[w] - 1);
@@ -263,9 +268,13 @@ function finish(won){
     if(L.final) return ending();
     showMap();
   };
-  $('other').textContent = won ? 'Fly it again' : 'Retry near the end of the rail';
-  $('other').classList.toggle('hide', !won && sim.checkpoint !== 'arena' && sim.mode !== 'free' && sim.phase !== 'railboss');
-  $('other').onclick = () => won ? play() : play('arena');
+  // after a crash: back to the clearing if you got that far, else to the
+  // rail's checkpoint if you passed it
+  const toArena = sim.checkpoint === 'arena' || sim.mode === 'free' || sim.phase === 'railboss';
+  const cp = !toArena && sim.cpPassed;
+  $('other').textContent = won ? 'Fly it again' : cp ? 'Retry from the checkpoint' : 'Retry near the end of the rail';
+  $('other').classList.toggle('hide', !won && !toArena && !cp);
+  $('other').onclick = () => won ? play() : cp ? play('mid', cp) : play('arena');
   setTimeout(() => screen('result'), won ? 300 : 0);
 }
 function ending(){
@@ -319,6 +328,9 @@ function react(events){
       case 'windup': snd.sfx('alarm', at, 0.5); break;
       case 'swat': snd.sfx('hull', null, 1); break;
       case 'pickup': case 'gift': snd.sfx('pickup'); break;
+      case 'drop': snd.sfx('pickup', at, 0.6, 1.4); break;
+      case 'checkpoint': snd.cue('pickup'); hud.show('CHECKPOINT', 'Crash after this and you start here', 1.8); break;
+      case 'upgrade': snd.cue('pickup'); hud.show('SHIELD UPGRADE', 'Three golden bones', 2); break;
       case 'shieldDown': snd.sfx('shieldDown', at); break;
       case 'strikeWarn': snd.sfx('torpedo', at, 0.6); break;
       case 'lightning': snd.sfx('bigBoom', at, 1); snd.sfx('crack', at, 1); buzz(30); break;

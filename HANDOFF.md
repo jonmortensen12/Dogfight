@@ -118,12 +118,14 @@ U-TURN in the clearing. Right: FIRE, BOMB, TARGET in the clearing.
   starts charging, full 0.75 s later (a green glow on the nose, a ring on
   the reticle). Once charged, the reticle locks on to whatever is within
   12° of the nose (sticky until it is 34° off). Let go: a charged shot,
-  230 m/s, homing if locked, 7 damage plus a 30 m burst. **Only a charged
+  230 m/s, homing if locked, 7 damage plus a 42 m burst (Star Fox 64's
+  is 5½ Arwing wingspans; this is about that in Teddy's). **Only a charged
   shot locks on.** **Combos** (round 5): the burst hits every small enemy
   inside it for the full 7, and anything it destroys goes off in turn (a
   24 m, 6-damage blast, `CHAIN` in `sim.js`), so a pack goes up together.
   Every kill past the first in one chain is a bonus hit, shown as "+N
-  COMBO". Boss parts take the burst with falloff and don't chain.
+  COMBO". Boss parts take the burst with falloff and don't chain. Seven
+  or more in one shot and a wingmate shouts about it, as at +7 in SF64.
 - **BOMB**: straight ahead, no lock; bursts after 1.3 s or on contact,
   50 m, and clears enemy bolts inside it.
 - **Swipe** sideways anywhere else (< 450 ms, > 40 px): a barrel roll. It
@@ -146,7 +148,17 @@ nothing.
 
 **The rail (the canyon).** The frame runs along the canyon's centre line
 by itself at 60 m/s (boost 100, brake 32). The stick moves the ship about a
-box in that frame (see Handling above). The box is the canyon floor's half width minus 13 m sideways, and 6 to
+box in that frame, one of two ways (the **Rail** setting):
+
+- **Point the nose** (default, round 6, taken from Star Fox 64's
+  `Player_MoveArwingOnRails`): the stick aims the nose up to 54° off the
+  rail, and the ship goes where it points, sideways at 1.4 × speed ×
+  sin(angle) — at full point a little faster than it flies forward. The
+  nose eases there (10% of the gap per 30th of a second) no faster than
+  69°/s; banked into the turn, twice that; in a barrel roll, three times.
+  Near the floor the nose won't go down. Pointing into a wall, the nose
+  comes back round. `POINT` in `sim.js`.
+- **Slide**: the old way, see Handling above. The box is the canyon floor's half width minus 13 m sideways, and 6 to
 58 m up (and never below the ground + 4 m). The nose points along the
 ship's motion in the box, so the shots go where you are sliding: classic
 rail-shooter feel. The wheel leans the ship up to 90° (plus a little lean from
@@ -183,9 +195,37 @@ with a TURN BACK warning from 700. The ceiling is 460 m. PULL UP under
 **Crashing** costs 12 shield and bounces you off (0.9 s before it can
 happen again). In the canyon a spire knocks you sideways, an arch down.
 
-**Guns.** See FIRE above. Aim assist bends a tapped shot towards an
+**Lasers** fly 300 m/s × the speed setting (were 430), about four times
+the rail speed (SF64's: 3.3 times), and live 1.65 s so the range is the
+same. **Guns.** See FIRE above. Aim assist bends a tapped shot towards an
 enemy within 6.3° / 4.3° / 2.6° of the nose (Pup / Good Boy / Top Dog),
 leading it. Three bombs; the blue capsule gives two.
+
+## Star Fox 64's design, borrowed (round 6)
+
+Read out of the fan decompilation (github.com/sonicdcer/sf64, the game's
+logic as C; no art or sound from it is used, only how it plays):
+
+- **Squads** (its group drops): darts that come as a formation or swoop of
+  3 or more are a squad. Shoot every one yourself and the last drops a
+  present: a bone if your shield is under 60%, else the ball if you
+  haven't got twin lasers, else a bomb if you're short. Rosie says so.
+- **Kill milestones in the clearing** (it drops a gold ring on the 5th,
+  10th, 20th, 30th all-range kill and lasers on the 15th): your 5th
+  fighter drops a bone, the 10th a bomb, the 15th the ball, the 20th and
+  30th bones.
+- **Golden bones are gold rings**: each tops the shield up 12, and the
+  third makes the shield bigger (140) for the rest of the planet; the bar
+  grows. ("SHIELD UPGRADE")
+- **The checkpoint** (its mid-level ring): a green gate halfway down each
+  rail (`checkpointU` in `sim.js`, kept clear of forks and bosses; none on
+  clearing-only planets). Fly past it for +50 shield; crash after it and
+  "Retry from the checkpoint" starts you there with your hits, golden
+  bones, secret progress and wingmates as they were.
+- **Medals** (150 hits on Corneria, 200 on Meteo...): `MEDALS` in
+  `levels.js`, a hit target per planet set a little above the sharp
+  computer pilot (combo bonus hits count). Win with that many and the map
+  shows 🏅 instead of ✓; free play counts too.
 
 ## The adventure (`levels.js`)
 
@@ -379,6 +419,14 @@ tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
   1.6× and caught within 11 m (rings 13).
 - A blob shadow under the ship (depth), dust when flying low, engine
   trails, speed specks in the air, a wider view on boost.
+- **The lens** (round 6, from SF64's camera code): 48° (was 68°, and 74°
+  at 1.25×) from further back (`CAM` in `world.js`: 38 m behind on the
+  rail, 36 in the chase view). Teddy is the same size on screen, but
+  everything further away looks much bigger, as in Star Fox. On the rail
+  the camera follows 78% of the ship's slide (SF64: 77.7%), so the ship
+  moves about the screen; it leans a little the other way to the stick;
+  it tilts 30% of the ship's roll (20% in space). Wingmates fly in from
+  behind, wide and high, so they don't pass through the lens.
 - **The camera** (rewritten 2026-11-08 after "a noticeable jump" in rolls
   and loops). Everything is smoothed as an offset from the ship, so the
   ship's own speed never makes the picture lag. On the rail it is the

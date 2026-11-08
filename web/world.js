@@ -15,6 +15,7 @@ import {height, railPoint, railFrame, GROUND, RAIL_END} from './terrain.js';
 import {hot, buildPetShip, buildEnemy, buildPickup} from './models.js';
 import {buildScenery, NOISE} from './scenery.js';
 import {CAST} from './cast.js';
+import {checkpointU} from './sim.js';
 
 
 /* ---------- GLSL ---------- */
@@ -139,7 +140,13 @@ const _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
    the camera sits further back than it used to (2026-11-08: "make my ship
    smaller on the screen so I can see what is happening"). */
 const SHIP_SCALE = 0.85;
-const CAM = {railBack: 25, railUp: 9, railLook: 60, chaseBack: 24, chaseUp: 6.5, chaseLook: 45};
+/* The camera (round 6, after Star Fox 64's): a narrow 48 degree lens from
+   further back - Teddy is the same size on screen, but distant enemies and
+   bosses look three times bigger than through the old 68-74 degree lens.
+   On the rail it follows 78% of the ship's slide (so the ship moves about
+   the screen), swings a little against the stick, and tilts 30% of the
+   ship's roll (20% in space). */
+const CAM = {fov: 48, railBack: 38, railUp: 9.5, railLook: 70, railFollow: 0.78, railLead: 0.12, chaseBack: 36, chaseUp: 8, chaseLook: 55};
 class Beam {
   constructor(scene, color, width){
     this.mat = new THREE.ShaderMaterial({vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
@@ -258,6 +265,18 @@ export class World {
     this.hemi.color.copy(sc.hemiSky); this.hemi.groundColor.copy(sc.hemiGround); this.hemi.intensity = sc.hemiI;
     this.theme = def.theme || {};
     this.level = def;
+    // the checkpoint gate: a big ring of light across the rail
+    if(this.gate){ this.scene.remove(this.gate); this.gate = null; }
+    const cu = checkpointU(def);
+    if(cu){
+      const f = railFrame(cu), q = railPoint(cu, 0, 0);
+      const y = GROUND === 'space' ? 10 : Math.max(30, height(q.x, q.z) + 26);
+      const g = this.gate = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.TorusGeometry(22, 1.1, 8, 48), new THREE.MeshBasicMaterial({color: hot(0x7affb0, 2.2), transparent: true, opacity: 0.8})));
+      g.add(new THREE.Mesh(new THREE.TorusGeometry(19, 0.4, 6, 48), new THREE.MeshBasicMaterial({color: hot(0xd0ffe0, 2), transparent: true, opacity: 0.6})));
+      g.position.set(q.x, y, q.z); g.rotation.set(0, Math.atan2(f.tx, f.tz), 0);
+      this.scene.add(g);
+    }
     this.snap = true;
   }
 
@@ -269,7 +288,7 @@ export class World {
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
     // portrait (on a laptop window) still shows enough width
-    this.baseFov = w / h < 1 ? 85 : 68;
+    this.baseFov = w / h < 1 ? 66 : CAM.fov;
     this.camera.updateProjectionMatrix();
     this.parts.mat.uniforms.uScale.value = h * 0.9;
   }
@@ -636,11 +655,15 @@ export class World {
     } else {
       // the rail view (used as long as chaseW is below 1)
       const R = p.man && s.mode === 'rail' ? {u: p.man.u0, ox: p.man.ox0, oy: p.man.oy0} : p.rail;
-      const c = railPoint(R.u - CAM.railBack, R.ox * 0.72, 0);
-      const railPos = new THREE.Vector3(c.x, R.oy * 0.85 + CAM.railUp, c.z);
-      const l = railPoint(R.u + CAM.railLook, R.ox * 0.85, 0);
-      const railLook = new THREE.Vector3(l.x, R.oy * 0.92 + 2, l.z);
-      const railUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(p.fx, 0, p.fz).normalize(), -p.bank * 0.12);
+      // the stick's lead: the camera eases the other way to the stick
+      const lead = this.lead = (this.lead || 0) + ((p.rail.vx || 0) - (this.lead || 0)) * Math.min(1, 3 * dt);
+      const fol = CAM.railFollow;
+      const c = railPoint(R.u - CAM.railBack, R.ox * fol - lead * CAM.railLead, 0);
+      const railPos = new THREE.Vector3(c.x, R.oy * fol + (1 - fol) * 30 + CAM.railUp, c.z);
+      const l = railPoint(R.u + CAM.railLook, R.ox * fol - lead * CAM.railLead * 0.35, 0);
+      const railLook = new THREE.Vector3(l.x, R.oy * fol + (1 - fol) * 30 + 2, l.z);
+      const space = this.theme && this.level && this.level.ground === 'space';
+      const railUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(p.fx, 0, p.fz).normalize(), -p.bank * (space ? 0.2 : 0.3));
       // once free of the rail, the rail view travels with the ship (as the
       // offset it last had) rather than staying behind on the canyon floor
       if(s.mode === 'rail'){ this.railWo = railPos.clone().sub(P); this.railLo = railLook.clone().sub(P); }
@@ -688,8 +711,8 @@ export class World {
     cam.lookAt(_cl.copy(P).add(this.lookOff));
     const base = (s.mode === 'rail' ? 60 : 62) * (s.pace || 1);
     const boost = (p.speed - base) / (45 * (s.pace || 1));
-    this.fovKick += (boost * 12 - this.fovKick) * Math.min(1, 4 * dt);
-    cam.fov = this.baseFov + this.fovKick + ((s.pace || 1) - 1) * 6;
+    this.fovKick += (boost * 8 - this.fovKick) * Math.min(1, 4 * dt);
+    cam.fov = this.baseFov + this.fovKick + ((s.pace || 1) - 1) * 3;
     cam.updateProjectionMatrix();
   }
 

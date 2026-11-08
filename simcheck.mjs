@@ -12,7 +12,7 @@
    4. The moves (loops, U-turns, the charge and lock, barrel rolls).
    5. The same seed plays the same game.
    Exits non-zero if anything that should hold does not. Takes a minute or two. */
-import {newSim, step, autopilot, SKILLS, LOOP, CHARGE} from './web/sim.js';
+import {newSim, step, autopilot, SKILLS, LOOP, CHARGE, checkpointU} from './web/sim.js';
 import {setLevel, height, halfW, railFrame, railPoint, archUnder, spireR, spireTop, hitObstacle, RAIL_END, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN, GROUND} from './web/terrain.js';
 import * as T from './web/terrain.js';
 import {LEVELS, ORDER} from './web/levels.js';
@@ -202,6 +202,33 @@ for(const style of ['level', 'full']){
   const left = s.enemies.filter(e => e.id >= 900 && e.hp > 0).length;
   ok(left === 0, `a charged shot into a pack of 7 destroys them all, by chain reaction (${7 - left} down)`);
   ok(combo === 6 && s.stats.kills - k0 === 13, `and scores a combo: +${combo} bonus hits (${s.stats.kills - k0} hits for 7 cats)`);
+}
+
+console.log('\nSquads, drops and the checkpoint');
+{
+  // fly Red Canyon: squads shot down whole drop presents, the clearing's
+  // milestones drop more, the checkpoint is passed
+  const s = newSim({level: 'canyon', seed: 4, pace: 1.25, allies: allies('canyon')});
+  let drops = 0, cpAt = null, carry = null;
+  for(let t = 0; t < 400 && !s.done && !s.failed; t += 1 / 60){
+    step(s, 1 / 60, autopilot(s, 0.85));
+    for(const e of s.events){ if(e.k === 'drop') drops++; if(e.k === 'checkpoint'){ cpAt = s.p.rail.u; carry = JSON.parse(JSON.stringify(s.cpPassed)); } }
+    s.events.length = 0;
+  }
+  ok(drops >= 2, `shot-down squads and kill milestones drop presents (${drops} in Red Canyon)`);
+  const cu = checkpointU(LEVELS.canyon);
+  ok(cpAt != null && Math.abs(cpAt - cu) < 5, `the checkpoint is passed halfway down the rail (u ${cu})`);
+  // crash after it: start again from there with what you had
+  const m = newSim({level: 'canyon', seed: 4, pace: 1.25, start: 'mid', carry, allies: carry.allies});
+  ok(Math.abs(m.p.rail.u - cu) < 1 && m.stats.kills === carry.kills && m.stats.goldTotal === carry.goldTotal, `retrying puts Teddy back at the checkpoint with his ${carry.kills} hits`);
+  let won = false;
+  for(let t = 0; t < 400 && !m.done && !m.failed; t += 1 / 60){ step(m, 1 / 60, autopilot(m, 0.85)); m.events.length = 0; }
+  won = m.done;
+  ok(won, 'and the level can be finished from there');
+  // every rail level but the clearing-only ones has a checkpoint, clear of its fork
+  const cps = ORDER.map(id => [id, checkpointU(LEVELS[id])]);
+  ok(cps.every(([id, u]) => LEVELS[id].start === 'arena' ? !u : u > 0 && !(LEVELS[id].fork && u > LEVELS[id].fork.u0 - 250 && u < LEVELS[id].fork.u1 + 150)),
+    `checkpoints: ${cps.map(([id, u]) => id + ' ' + (u || '-')).join(', ')}`);
 }
 
 console.log('\nSame seed, same game');
