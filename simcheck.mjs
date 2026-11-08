@@ -30,8 +30,8 @@ for(const o of OBSTACLES.filter(o => o.type === 'arch')){
   ok(lowest > RAIL_FLOOR + 14, `arch at u ${o.u}: ${lowest.toFixed(0)} m of room under it at the walls, ${archUnder(o, 0).toFixed(0)} m in the middle`);
 }
 
-function run(skill, style, pilot, seed, start){
-  const s = newSim({skill, style, seed, start});
+function run(skill, style, pilot, seed, start, pace){
+  const s = newSim({skill, style, seed, start, pace});
   const dt = 1 / 60;
   let t = 0, crashes = 0, arenaAt = null, shieldAtArena = null, nan = false;
   while(t < 600 && !s.done && !s.failed){
@@ -47,27 +47,33 @@ function run(skill, style, pilot, seed, start){
 }
 const fmt = r => `${r.won ? 'WON ' : 'lost'} in ${r.t.toFixed(0)} s, canyon ${r.arenaAt ? r.arenaAt.toFixed(0) + ' s (shield ' + r.shieldAtArena.toFixed(0) + ')' : 'not finished'}, shield ${r.shield.toFixed(0)}, ${r.kills} down, ${r.crashes} bumps, acc ${(r.acc * 100).toFixed(0)}%, wave ${r.wave}`;
 
-const SEEDS = [3, 11, 29];
+const SEEDS = [3, 11, 29, 41, 57];
 const table = {};
-console.log('\nThe computer pilot, three games each');
-for(const [skill, style, pilot, label] of [
+console.log('\nThe computer pilot, five games each');
+for(const [skill, style, pilot, label, pace] of [
   ['good', 'level', 0.85, 'sharp pilot, Good Boy, level'],
   ['good', 'full', 0.85, 'sharp pilot, Good Boy, full 3D'],
   ['pup', 'level', 0.5, 'sloppy pilot, Pup'],
   ['good', 'level', 0.5, 'sloppy pilot, Good Boy'],
   ['top', 'level', 0.85, 'sharp pilot, Top Dog'],
+  ['good', 'level', 0.85, 'sharp pilot, Good Boy, 1.25x speed (the game\'s default)', 1.25],
+  ['good', 'level', 0.85, 'sharp pilot, Good Boy, 1.5x speed', 1.5],
+  ['good', 'full', 0.85, 'sharp pilot, Good Boy, full 3D, 1.5x speed', 1.5],
 ]){
-  const rs = SEEDS.map(seed => run(skill, style, pilot, seed));
+  const rs = SEEDS.map(seed => run(skill, style, pilot, seed, undefined, pace));
   table[label] = rs;
   console.log(' ' + label);
   for(const r of rs) console.log('    ' + fmt(r));
   ok(!rs.some(r => r.nan), 'nothing went NaN');
-  ok(rs.every(r => r.arenaAt && r.arenaAt > 50 && r.arenaAt < 80), 'the canyon takes about a minute');
+  const canyon = CANYON_END / (60 * (pace || 1));
+  ok(rs.every(r => r.arenaAt && Math.abs(r.arenaAt - canyon) < canyon * 0.15), `the canyon takes about ${canyon.toFixed(0)} s at ${pace || 1}x`);
 }
 const wins = l => table[l].filter(r => r.won).length;
-ok(wins('sharp pilot, Good Boy, level') >= 2, 'a sharp pilot clears Good Boy (at least 2 of 3)');
-ok(wins('sloppy pilot, Pup') >= 2, 'a sloppy pilot clears Pup (at least 2 of 3)');
-ok(wins('sharp pilot, Top Dog') <= 2, 'Top Dog is not a walkover (the sharp pilot loses at least 1 of 3)');
+ok(wins('sharp pilot, Good Boy, level') >= 3, 'a sharp pilot clears Good Boy (at least 3 of 5)');
+ok(wins('sloppy pilot, Pup') >= 4, 'a sloppy pilot clears Pup (at least 4 of 5)');
+ok(wins('sharp pilot, Top Dog') <= 3, 'Top Dog is not a walkover (the sharp pilot loses at least 2 of 5)');
+ok(wins("sharp pilot, Good Boy, 1.25x speed (the game's default)") >= 3, 'at the default 1.25x a sharp pilot still clears Good Boy');
+ok(wins('sharp pilot, Good Boy, 1.5x speed') + wins('sharp pilot, Good Boy, full 3D, 1.5x speed') >= 5, 'at 1.5x it is still winnable');
 ok(table['sharp pilot, Good Boy, full 3D'].every(r => r.wave >= 2), 'full-3D flying works well enough for the computer to reach wave 2');
 ok(table['sharp pilot, Good Boy, level'].every(r => r.shieldAtArena > 40), 'the canyon leaves a sharp pilot more than 40 shield');
 const won = table['sharp pilot, Good Boy, level'].filter(r => r.won);

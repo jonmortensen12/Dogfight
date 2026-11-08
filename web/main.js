@@ -17,9 +17,9 @@ const touch = matchMedia('(pointer: coarse)').matches;
 if(!touch) document.body.classList.add('desktop');
 
 /* ---------- settings, kept on this device ---------- */
-const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon'};
+const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon', pace: '1.25'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('dogfight') || '{}')); } catch(e){}
-for(const k of ['skill', 'style', 'start']) if(qs.get(k)) S[k] = qs.get(k);
+for(const k of ['skill', 'style', 'start', 'pace']) if(qs.get(k)) S[k] = qs.get(k);
 const save = () => { try { localStorage.setItem('dogfight', JSON.stringify(S)); } catch(e){} };
 const AUTO = qs.get('auto') === '1';
 
@@ -28,7 +28,7 @@ const hud = new Hud($('hud'));
 const input = new Input(document.body);
 drawTeddy($('tface').getContext('2d'), 128);
 
-let sim = newSim({skill: S.skill, style: S.style, seed: +qs.get('seed') || 7});
+let sim = newSim({skill: S.skill, style: S.style, pace: +S.pace, seed: +qs.get('seed') || 7});
 let state = 'title';
 const view = {target: null};
 window.__dog = {get sim(){ return sim; }, world, hud, input, get state(){ return state; }};
@@ -44,7 +44,8 @@ function paintChips(){
 for(const c of document.querySelectorAll('.chip')) c.addEventListener('click', () => {
   const k = c.dataset.opt;
   if(k === 'invert') S.invert = !S.invert; else S[k] = c.dataset.v;
-  if(k === 'style'){ sim.style = S.style; if(sim.mode === 'free'){ sim.p.bank = 0; sim.p.uturn = null; } }
+  if(k === 'style'){ sim.style = S.style; if(sim.mode === 'free'){ sim.p.bank = 0; } }
+  if(k === 'pace') sim.pace = +S.pace;
   save(); paintChips(); snd.sfx('click');
 });
 paintChips();
@@ -59,7 +60,7 @@ async function play(from){
     try { await document.documentElement.requestFullscreen({navigationUI: 'hide'}); await screen_lock(); } catch(e){}
   }
   const ok = await Input.ask();
-  sim = newSim({skill: S.skill, style: S.style, start: from || S.start, seed: (Math.random() * 1e9) | 0});
+  sim = newSim({skill: S.skill, style: S.style, pace: +S.pace, start: from || S.start, seed: +qs.get('seed') || (Math.random() * 1e9) | 0});
   world.snap = true; view.target = null; document.body.classList.remove('target-on', 'free');
   hud.queue = []; hud.radio = null; hud.banner = null;
   if(AUTO){ go(); return; }
@@ -89,7 +90,7 @@ function pause(){ if(state !== 'play') return; state = 'pause'; screen('pause');
 function resume(){ state = 'play'; screen(null); controls(true); }
 function toTitle(){
   state = 'title'; controls(false); screen('title');
-  sim = newSim({skill: S.skill, style: S.style}); world.snap = true;
+  sim = newSim({skill: S.skill, style: S.style, pace: +S.pace}); world.snap = true;
 }
 function finish(won){
   state = 'over'; controls(false);
@@ -105,7 +106,7 @@ function finish(won){
   $('rtable').innerHTML = [
     ['Time', mm + ':' + String(ss).padStart(2, '0')], ['Shot down', st.kills], ['Accuracy', acc + '%'],
     ['Golden bones', st.gold + ' / ' + st.goldTotal], ['Damage taken', Math.round(st.damage)],
-    ['Difficulty', SKILLS[sim.skill].name], ['Clearing flown', sim.style === 'full' ? 'Full 3D' : 'Level horizon'],
+    ['Difficulty', SKILLS[sim.skill].name], ['Speed', sim.pace + '×'], ['Clearing flown', sim.style === 'full' ? 'Full 3D' : 'Level horizon'],
   ].map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('');
   const other = S.style === 'full' ? 'level' : 'full';
   $('other').textContent = won ? 'Try ' + (other === 'full' ? 'Full 3D' : 'Level horizon') : 'Retry from the clearing';
@@ -201,7 +202,7 @@ function frame(now){
   snd.listenAt(cam.position.x, cam.position.y, cam.position.z);
   snd.listen(f, cam.up);
   snd.engine(sim.p.speed, state === 'play' && !sim.p.dead);
-  snd.music(state === 'title' || state === 'calib' ? 'lobby' : sim.phase === 'won' || state === 'over' ? null : sim.boss ? 'boss' : 'redshift');
+  snd.music(state === 'title' || state === 'calib' ? 'title' : sim.phase === 'won' || state === 'over' ? null : sim.boss ? 'boss' : sim.mode === 'free' ? 'clearing' : 'canyon');
 
   // a phone that cannot keep up draws fewer pixels, then drops the glow
   if(state === 'play'){

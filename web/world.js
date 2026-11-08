@@ -242,6 +242,7 @@ class Particles {
 /* ---------- beams: lasers, camera-facing quads ---------- */
 const beamGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
+const _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
 class Beam {
   constructor(scene, color, width){
     this.mat = new THREE.ShaderMaterial({vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
@@ -1049,9 +1050,41 @@ export class World {
     this.arena.visible = cu > CANYON_END - 1600;
   }
 
+  /* The camera. Everything is worked out as offsets from the ship and
+     smoothed as offsets, so the ship's own speed never makes the picture
+     lag or jitter.
+     - On the rail: the classic view, behind and a little above the rail,
+       following the ship part of the way across the canyon.
+     - The chase rig (the clearing, and the rail's loop): bolted behind the
+       ship, turning with it. Its turning is smoothed as a rotation
+       (a quaternion slerp), so going over the top of a loop - nose
+       straight up, then upside down - is one smooth swing with nothing
+       to flip.
+     The two are blended (chaseW) so moving between them is a glide. */
   cameraFollow(s, dt, view){
     const p = s.p, cam = this.camera;
+    const P = _cp.set(p.x, p.y, p.z);
     const want = new THREE.Vector3(), look = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    let rate = 7;
+    // the ship's frame, as the chase rig wants it
+    const f = new THREE.Vector3(p.fx, p.fy, p.fz);
+    let u;
+    if(!p.man && s.mode === 'free' && s.style === 'level'){
+      // level flying: the camera stays level, leaning a little with the bank
+      const right = new THREE.Vector3(-p.fz, 0, p.fx).normalize();
+      u = new THREE.Vector3().crossVectors(right, f).normalize().applyAxisAngle(f, -p.bank * 0.25);
+    } else if(!p.man && s.mode === 'rail'){
+      u = new THREE.Vector3(0, 1, 0);
+    } else u = new THREE.Vector3(p.ux, p.uy, p.uz);
+    const r = new THREE.Vector3().crossVectors(f, u).normalize();
+    const u2 = new THREE.Vector3().crossVectors(r, f).normalize();
+    const tq = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(r, u2, f.clone().negate()));
+    if(!this.camQ || this.snap) this.camQ = tq.clone();
+    else this.camQ.slerp(tq, 1 - Math.exp(-(p.man ? 5 : 7) * dt));
+    const fs = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camQ), us = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camQ);
+    const chaseW = view.orbit || p.dead ? 0 : (s.mode === 'free' || p.man) ? 1 : 0;
+    this.chaseW = this.chaseW == null || this.snap ? chaseW : this.chaseW + (chaseW - this.chaseW) * Math.min(1, 4 * dt);
+
     if(view.orbit){
       // the title screen: a slow turn round Teddy's ship
       const a = 0.75 + Math.sin(this.time * 0.15) * 0.55;
@@ -1063,61 +1096,65 @@ export class World {
       // circle the wreck
       const a = this.time * 0.3;
       want.set(p.x + Math.cos(a) * 40, p.y + 18, p.z + Math.sin(a) * 40);
-      look.set(p.x, p.y, p.z);
-    } else if(s.mode === 'rail'){
-      const r = p.rail;
-      const c = railPoint(r.u - 17, r.ox * 0.72, 0);
-      want.set(c.x, r.oy * 0.85 + 6.5, c.z);
-      const l = railPoint(r.u + 45, r.ox * 0.85, 0);
-      look.set(l.x, r.oy * 0.92 + 2, l.z);
-      if(p.man){
-        // the somersault: the camera hangs back, rises a little and watches the ship go over
-        const c2 = railPoint(r.u - 30, r.ox * 0.72, 0);
-        want.set(c2.x, r.oy * 0.85 + 10 + (p.y - r.oy) * 0.35, c2.z);
-        look.set(p.x, p.y, p.z);
-      }
-      up.set(0, 1, 0).applyAxisAngle(_v1.set(p.fx, 0, p.fz).normalize(), -p.bank * 0.12);
+      look.copy(P);
+      rate = 3;
     } else {
-      const f = _v1.set(p.fx, p.fy, p.fz);
-      let u;
-      if(s.style === 'level'){
-        // the camera stays level-ish: it leans with the bank a little
-        const right = _v3.set(-p.fz, 0, p.fx).normalize();
-        u = _v2.crossVectors(right, f).normalize();
-        u.applyAxisAngle(f, -p.bank * 0.25);
-      } else u = _v2.set(p.ux, p.uy, p.uz);
-      const tgt = view.target && s.enemies.find(e => e.id === view.target);
+      // the rail view (used as long as chaseW is below 1)
+      const R = p.man && s.mode === 'rail' ? {u: p.man.u0, ox: p.man.ox0, oy: p.man.oy0} : p.rail;
+      const c = railPoint(R.u - 17, R.ox * 0.72, 0);
+      const railPos = new THREE.Vector3(c.x, R.oy * 0.85 + 6.5, c.z);
+      const l = railPoint(R.u + 45, R.ox * 0.85, 0);
+      const railLook = new THREE.Vector3(l.x, R.oy * 0.92 + 2, l.z);
+      const railUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(p.fx, 0, p.fz).normalize(), -p.bank * 0.12);
+      // once free of the rail, the rail view travels with the ship (as the
+      // offset it last had) rather than staying behind on the canyon floor
+      if(s.mode === 'rail'){ this.railWo = railPos.clone().sub(P); this.railLo = railLook.clone().sub(P); }
+      else if(this.railWo){ railPos.copy(P).add(this.railWo); railLook.copy(P).add(this.railLo); }
+      // the chase rig
+      const tgt = view.target && s.mode === 'free' && s.enemies.find(e => e.id === view.target);
+      let chasePos, chaseLook;
       if(tgt){
         // keep both of you in the picture: behind Teddy, looking towards it
-        const d = _v4.set(tgt.x - p.x, tgt.y - p.y, tgt.z - p.z);
+        const d = new THREE.Vector3(tgt.x - p.x, tgt.y - p.y, tgt.z - p.z);
         const dist = d.length(); d.normalize();
-        want.set(p.x, p.y, p.z).addScaledVector(d, -20).addScaledVector(u, 7);
-        look.set(p.x, p.y, p.z).addScaledVector(d, Math.min(dist * 0.5, 120));
+        chasePos = P.clone().addScaledVector(d, -20).addScaledVector(us, 7);
+        chaseLook = P.clone().addScaledVector(d, Math.min(dist * 0.5, 120));
+        rate = 5;
       } else {
-        want.set(p.x, p.y, p.z).addScaledVector(f, -17).addScaledVector(u, 5);
-        look.set(p.x, p.y, p.z).addScaledVector(f, 35);
+        chasePos = P.clone().addScaledVector(fs, -17).addScaledVector(us, 5);
+        chaseLook = P.clone().addScaledVector(fs, 35);
+        rate = s.mode === 'free' ? 25 : 7;
       }
-      up.copy(u);
-      // the ground is solid for the camera too
-      const g = height(want.x, want.z) + 3;
-      if(want.y < g) want.y = g;
+      const w = this.chaseW;
+      want.copy(railPos).lerp(chasePos, w);
+      look.copy(railLook).lerp(chaseLook, w);
+      up.copy(railUp).lerp(us, w);
+      if(up.lengthSq() < 0.01) up.copy(us);
+      up.normalize();
+      if(w > 0.02 && s.mode === 'rail') rate = 12;
     }
-    const k = 1 - Math.exp(-(s.mode === 'rail' ? 7 : 6) * dt);
-    if(this.snap){ this.camPos.copy(want); this.camLook.copy(look); this.camUp.copy(up); this.snap = false; }
-    this.camPos.lerp(want, k);
-    this.camLook.lerp(look, Math.min(1, k * 1.6));
-    this.camUp.lerp(up, k).normalize();
-    cam.position.copy(this.camPos);
+    // smooth as offsets from the ship
+    const wo = want.clone().sub(P), lo = look.clone().sub(P);
+    const k = 1 - Math.exp(-rate * dt);
+    if(this.snap || !this.camOff){ this.camOff = wo.clone(); this.lookOff = lo.clone(); this.camUp.copy(up); this.snap = false; }
+    this.camOff.lerp(wo, k);
+    this.lookOff.lerp(lo, Math.min(1, k * 1.6));
+    this.camUp.lerp(up, Math.min(1, k * 1.2)).normalize();
+    cam.position.copy(P).add(this.camOff);
+    // the ground is solid for the camera too
+    const g = height(cam.position.x, cam.position.z) + 3;
+    if(cam.position.y < g) cam.position.y = g;
     if(this.shake > 0){
       const a = this.shake * 0.6;
       cam.position.x += (Math.random() - 0.5) * a; cam.position.y += (Math.random() - 0.5) * a; cam.position.z += (Math.random() - 0.5) * a;
       this.shake = Math.max(0, this.shake - dt * 2.5);
     }
     cam.up.copy(this.camUp);
-    cam.lookAt(this.camLook);
-    const boost = (p.speed - (s.mode === 'rail' ? 60 : 62)) / 45;
+    cam.lookAt(_cl.copy(P).add(this.lookOff));
+    const base = (s.mode === 'rail' ? 60 : 62) * (s.pace || 1);
+    const boost = (p.speed - base) / (45 * (s.pace || 1));
     this.fovKick += (boost * 12 - this.fovKick) * Math.min(1, 4 * dt);
-    cam.fov = this.baseFov + this.fovKick;
+    cam.fov = this.baseFov + this.fovKick + ((s.pace || 1) - 1) * 6;
     cam.updateProjectionMatrix();
   }
 

@@ -79,7 +79,7 @@ export function newSim(opts){
   opts = opts || {};
   const sk = SKILLS[opts.skill] ? opts.skill : 'good';
   const s = {
-    t: 0, skill: sk, K: SKILLS[sk], style: opts.style === 'full' ? 'full' : 'level',
+    t: 0, skill: sk, K: SKILLS[sk], style: opts.style === 'full' ? 'full' : 'level', pace: clamp(+opts.pace || 1, 0.5, 2.5),
     rand: rng(opts.seed || 7), nextId: 1,
     phase: 'canyon', mode: 'rail', wave: 0, waveT: 0, clearT: 0, done: false, failed: false,
     p: null, enemies: [], shots: [], bolts: [], missiles: [], bombs: [], pickups: [], events: [],
@@ -89,8 +89,8 @@ export function newSim(opts){
   const u0 = opts.start === 'arena' ? CANYON_END - 120 : 0;
   s.p = {
     x: 0, y: 30, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0, vx: 0, vy: 0, vz: 0,
-    speed: SPEED.rail, shield: 100, boost: 1, bombs: 3, twin: false,
-    rail: {u: u0, ox: 0, oy: 30, vx: 0, vy: 0},
+    speed: SPEED.rail * clamp(+opts.pace || 1, 0.5, 2.5), shield: 100, boost: 1, bombs: 3, twin: false,
+    rail: {u: u0, ox: 0, oy: 30, vx: 0, vy: 0, side: 0},
     yaw: 0, pitch: 0, bank: 0, rollT: 0, rollDir: 0, spin: 0, man: null, charge: 0, holdT: 0, fireHeld: false,
     hitT: 0, fireT: 0, lock: null, dead: false, deadT: 0, scrape: 0,
     behind: 0,
@@ -180,7 +180,7 @@ function startArena(s){
   s.phase = 'arena'; s.mode = 'free'; s.wave = 0; s.waveT = 1.5;
   const p = s.p;
   p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1)); p.bank = 0;
-  p.speed = SPEED.free;
+  p.speed = SPEED.free * s.pace;
   // the canyon's leftovers stay behind
   s.enemies = s.enemies.filter(e => !e.rail);
   s.pickups = s.pickups.filter(k => !k.taken && k.u > CANYON_END - 50);
@@ -263,7 +263,7 @@ export function step(s, dt, inp){
 export const LOOP = {railR: 24, railDur: 1.9, freeDur: 2.2, uturnUp: 1.1, uturnRoll: 0.55};
 function flyRail(s, dt, inp){
   const p = s.p, r = p.rail;
-  const want = inp.boost && p.boost > 0.02 ? SPEED.railBoost : inp.brake && p.boost > 0.02 ? SPEED.railBrake : SPEED.rail;
+  const want = s.pace * (inp.boost && p.boost > 0.02 ? SPEED.railBoost : inp.brake && p.boost > 0.02 ? SPEED.railBrake : SPEED.rail);
   if(inp.loop && !p.man){
     // a somersault: the rail waits while the ship goes up, over (facing
     // backwards at the top) and down again. Whatever was behind is now ahead.
@@ -272,17 +272,20 @@ function flyRail(s, dt, inp){
     ev(s, 'loop');
   }
   if(p.man){ railLoop(s, dt); return; }
-  meter(p, dt, want !== SPEED.rail);
+  meter(p, dt, !!((inp.boost || inp.brake) && p.boost > 0.02));
   p.speed += (want - p.speed) * Math.min(1, 2.5 * dt);
   r.u += p.speed * dt;
   const sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1);
   r.vx += (sx * 42 - r.vx) * Math.min(1, 6 * dt);
   r.vy += (sy * 34 - r.vy) * Math.min(1, 6 * dt);
-  if(p.rollT > 0) r.vx += p.rollDir * 70 * dt;          // a roll is a sidestep too
-  r.ox += r.vx * dt; r.oy += r.vy * dt;
+  // a roll is a sidestep too - kept apart from the stick's sliding so the
+  // nose does not swing with it
+  if(p.rollT > 0) r.side += p.rollDir * 48 * dt;
+  r.side *= Math.exp(-3 * dt);
+  r.ox += (r.vx + r.side) * dt; r.oy += r.vy * dt;
   const lim = halfW(r.u) - WALL_MARGIN;
-  if(r.ox > lim){ r.ox = lim; r.vx = Math.min(0, r.vx); }
-  if(r.ox < -lim){ r.ox = -lim; r.vx = Math.max(0, r.vx); }
+  if(r.ox > lim){ r.ox = lim; r.vx = Math.min(0, r.vx); r.side = Math.min(0, r.side); }
+  if(r.ox < -lim){ r.ox = -lim; r.vx = Math.max(0, r.vx); r.side = Math.max(0, r.side); }
   if(r.oy > RAIL_TOP){ r.oy = RAIL_TOP; r.vy = Math.min(0, r.vy); }
   const q = railPoint(r.u, r.ox, 0);
   const floor = Math.max(RAIL_FLOOR, height(q.x, q.z) + 4);
@@ -342,8 +345,8 @@ function meter(p, dt, using){
    half a loop and then half a roll, about the ship's own axes. */
 function flyFree(s, dt, inp){
   const p = s.p;
-  const want = inp.boost && p.boost > 0.02 ? SPEED.freeBoost : inp.brake && p.boost > 0.02 ? SPEED.freeBrake : SPEED.free;
-  meter(p, dt, want !== SPEED.free);
+  const want = s.pace * (inp.boost && p.boost > 0.02 ? SPEED.freeBoost : inp.brake && p.boost > 0.02 ? SPEED.freeBrake : SPEED.free);
+  meter(p, dt, !!((inp.boost || inp.brake) && p.boost > 0.02));
   p.speed += (want - p.speed) * Math.min(1, 2 * dt);
   let sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1), sr = clamp(inp.sr || 0, -1, 1);
 
@@ -471,7 +474,7 @@ function ship(s, dt, inp){
       const guns = p.twin ? [-1.7, 1.7] : [0];
       for(const o of guns){
         s.shots.push({x: p.x + f.x * 3 + side.x * o, y: p.y + f.y * 3 + side.y * o - 0.3, z: p.z + f.z * 3 + side.z * o,
-          vx: d.x * SHOT_SPEED + p.vx, vy: d.y * SHOT_SPEED + p.vy, vz: d.z * SHOT_SPEED + p.vz, life: 1.15});
+          vx: d.x * SHOT_SPEED * s.pace + p.vx, vy: d.y * SHOT_SPEED * s.pace + p.vy, vz: d.z * SHOT_SPEED * s.pace + p.vz, life: 1.15});
         s.stats.shots++;
       }
       ev(s, 'fire', {twin: p.twin});
@@ -486,7 +489,7 @@ function ship(s, dt, inp){
     }
   } else if(p.fireHeld){
     if(p.charge >= 1){
-      s.missiles.push({x: p.x + f.x * 4, y: p.y + f.y * 4, z: p.z + f.z * 4, fx: f.x, fy: f.y, fz: f.z, speed: 230, target: p.lock, life: 2.6, charged: true});
+      s.missiles.push({x: p.x + f.x * 4, y: p.y + f.y * 4, z: p.z + f.z * 4, fx: f.x, fy: f.y, fz: f.z, speed: 230 * s.pace, target: p.lock, life: 2.6, charged: true});
       ev(s, 'chargeShot', {lock: !!p.lock});
       s.stats.charged++;
     }
@@ -515,7 +518,7 @@ function ship(s, dt, inp){
   // bombs go straight: no lock
   if(inp.bomb && p.bombs > 0){
     p.bombs--; s.stats.bombs++;
-    s.bombs.push({x: p.x, y: p.y - 1, z: p.z, vx: f.x * 170 + p.vx * 0.5, vy: f.y * 170 + p.vy * 0.5, vz: f.z * 170 + p.vz * 0.5, life: 1.3});
+    s.bombs.push({x: p.x, y: p.y - 1, z: p.z, vx: f.x * 170 * s.pace + p.vx * 0.5, vy: f.y * 170 * s.pace + p.vy * 0.5, vz: f.z * 170 * s.pace + p.vz * 0.5, life: 1.3});
     ev(s, 'missile');
   }
 
@@ -543,7 +546,7 @@ function assist(s, f){
     if(e.type === 'brute' && e.shielded) continue;
     const dx = e.x - p.x, dy = e.y - p.y, dz = e.z - p.z, d = len(dx, dy, dz);
     if(d > 520) continue;
-    const t = d / SHOT_SPEED;
+    const t = d / (SHOT_SPEED * s.pace);
     const lx = dx + (e.vx || 0) * t, ly = dy + (e.vy || 0) * t, lz = dz + (e.vz || 0) * t, ld = len(lx, ly, lz);
     const a = Math.acos(clamp((lx * f.x + ly * f.y + lz * f.z) / ld, -1, 1));
     if(a < bestA){ bestA = a; best = {x: lx / ld, y: ly / ld, z: lz / ld}; }
@@ -599,7 +602,7 @@ function aimAt(s, e, speed){
 function bolt(s, e, dir, dmg, from){
   const o = from || e;
   s.bolts.push({x: o.x + dir.x * (e.r + 1), y: o.y + dir.y * (e.r + 1), z: o.z + dir.z * (e.r + 1),
-    vx: dir.x * BOLT_SPEED, vy: dir.y * BOLT_SPEED, vz: dir.z * BOLT_SPEED, life: 4, dmg: dmg || 7, src: e.type});
+    vx: dir.x * BOLT_SPEED * s.pace, vy: dir.y * BOLT_SPEED * s.pace, vz: dir.z * BOLT_SPEED * s.pace, life: 4 / s.pace, dmg: dmg || 7, src: e.type});
   ev(s, 'enemyShot', {x: o.x, y: o.y, z: o.z});
 }
 function distP(s, e){ const p = s.p; return len(p.x - e.x, p.y - e.y, p.z - e.z); }
@@ -614,7 +617,7 @@ function turretAI(s, e, dt){
   const dist = distP(s, e);
   if(e.fireT <= 0 && ahead > 50 && dist < 430){
     e.fireT = (1.7 + s.rand()) * s.K.fire;
-    bolt(s, e, aimAt(s, e, BOLT_SPEED), 7);
+    bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 7);
   }
 }
 
@@ -622,33 +625,33 @@ function railAI(s, e, dt){
   const p = s.p, pu = p.rail.u;
   let u, ox, oy;
   if(e.state === 'oncoming'){
-    e.ru -= 42 * dt;
+    e.ru -= 42 * s.pace * dt;
     u = e.ru; ox = e.rox + Math.sin(e.t * 1.7 + e.ph) * 9; oy = e.roy + Math.sin(e.t * 1.3 + e.ph) * 5;
     e.fireT -= dt;
     const ahead = e.ru - pu;
-    if(!e.fired && ahead < 300 && ahead > 90){ e.fired = true; if(s.rand() < Math.min(1, 0.85 / s.K.fire)) bolt(s, e, aimAt(s, e, BOLT_SPEED), 7); }
+    if(!e.fired && ahead < 300 && ahead > 90){ e.fired = true; if(s.rand() < Math.min(1, 0.85 / s.K.fire)) bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 7); }
   } else if(e.state === 'cross'){
-    e.rox += e.dir * 46 * dt;
+    e.rox += e.dir * 46 * s.pace * dt;
     u = e.ru; ox = e.rox; oy = e.roy + Math.abs(e.rox) * 0.25;
     e.fireT -= dt;
     if(Math.abs(e.rox) < 25 && e.burst === 0 && e.ru - pu > 80){ e.burst = 3; e.fireT = 0; }
-    if(e.burst > 0 && e.fireT <= 0){ e.burst = e.burst > 1 ? e.burst - 1 : -1; e.fireT = 0.18; bolt(s, e, aimAt(s, e, BOLT_SPEED), 6); }
+    if(e.burst > 0 && e.fireT <= 0){ e.burst = e.burst > 1 ? e.burst - 1 : -1; e.fireT = 0.18; bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 6); }
     if(Math.abs(e.rox) > halfW(e.ru) + 60) e.gone = true;
   } else {
     // swoop: in from behind, hold ahead and shoot, then out over the rim
     if(e.t < 0){ e.x = -1e5; return; }
     if(e.state === 'swoopIn'){
-      e.rel += 95 * dt;
+      e.rel += 95 * s.pace * dt;
       e.roy += (e.holdY - e.roy) * Math.min(1, 1.6 * dt); e.rox += (e.holdX - e.rox) * Math.min(1, 1.2 * dt);
       if(e.rel > 150){ e.state = 'swoopHold'; e.holdT = 0; }
     } else if(e.state === 'swoopHold'){
       e.holdT += dt;
       e.rel = 150 + Math.sin(e.t * 0.9 + e.ph) * 18;
       e.fireT -= dt;
-      if(e.fireT <= 0){ e.fireT = (1.6 + s.rand() * 1.2) * s.K.fire; bolt(s, e, aimAt(s, e, BOLT_SPEED), 6); }
+      if(e.fireT <= 0){ e.fireT = (1.6 + s.rand() * 1.2) * s.K.fire; bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 6); }
       if(e.holdT > 8) e.state = 'swoopOut';
     } else {
-      e.rel += 70 * dt; e.roy += 30 * dt;
+      e.rel += 70 * s.pace * dt; e.roy += 30 * dt;
       if(e.rel > 600 || e.roy > 160) e.gone = true;
     }
     u = pu + e.rel; e.ru = u;
@@ -714,14 +717,14 @@ function dogfight(s, e, dt){
     if(e.extT <= 0) e.state = 'attack';
   }
   d = steerSafe(s, e, d, 140);
-  moveFwd(e, d, 1.25 * K.ai, e.speed * K.ai, dt);
+  moveFwd(e, d, 1.25 * K.ai, e.speed * K.ai * s.pace, dt);
   // guns
   e.fireT -= dt;
   const a = (dx * e.fx + dy * e.fy + dz * e.fz) / (dist || 1);
   if(e.fireT <= 0 && a > 0.97 && dist < 400 && dist > 30){
     if(e.burst <= 0) e.burst = 2;
     e.burst--; e.fireT = e.burst > 0 ? 0.2 : (1.3 + s.rand()) * K.fire;
-    bolt(s, e, aimAt(s, e, BOLT_SPEED), 6);
+    bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 6);
   }
 }
 function strafer(s, e, dt){
@@ -742,19 +745,19 @@ function strafer(s, e, dt){
     if(dist < 420 && a > 0.95 && e.fireT <= 0){
       if(e.burst <= 0) e.burst = 4;
       e.burst--; e.fireT = e.burst > 0 ? 0.13 : 2.5 * K.fire;
-      bolt(s, e, aimAt(s, e, BOLT_SPEED), 6);
+      bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace), 6);
     }
     if(dist < 70){ e.state = 'setup'; e.goal = null; e.goalT = 0; }
   }
   d = steerSafe(s, e, d, 160);
-  moveFwd(e, d, 1.0 * K.ai, e.speed * K.ai, dt);
+  moveFwd(e, d, 1.0 * K.ai, e.speed * K.ai * s.pace, dt);
 }
 function torpedo(s, e, dt){
   const p = s.p;
   e.life = (e.life == null ? 9 : e.life) - dt;
   const d = norm({x: p.x - e.x, y: p.y - e.y, z: p.z - e.z});
-  moveFwd(e, d, 0.62, e.speed, dt);
-  if(distP(s, e) < 4.5){ e.hp = 0; e.nokill = true; if(p.hitT <= 0){ damage(s, 10, 'torpedo'); p.hitT = 0.4; } ev(s, 'boom', {x: e.x, y: e.y, z: e.z}); }
+  moveFwd(e, d, 0.62, e.speed * s.pace, dt);
+  if(distP(s, e) < 4.5){ e.hp = 0; e.nokill = true; if(p.hitT <= 0){ damage(s, 8, 'torpedo'); p.hitT = 0.4; } ev(s, 'boom', {x: e.x, y: e.y, z: e.z}); }
   if(e.life <= 0 || e.y < height(e.x, e.z)){ e.hp = 0; e.nokill = true; ev(s, 'boom', {x: e.x, y: e.y, z: e.z}); }
 }
 function brute(s, e, dt){
@@ -764,15 +767,15 @@ function brute(s, e, dt){
   const R = 260, c = ARENA;
   const tx = c.x + Math.cos(e.orbitA) * R, tz = c.z + Math.sin(e.orbitA) * R, ty = 150 + Math.sin(e.t * 0.4) * 20;
   const d = norm({x: tx - e.x, y: (ty - e.y) * 0.3, z: tz - e.z});
-  moveFwd(e, d, 0.25, e.speed, dt);
+  moveFwd(e, d, 0.25, e.speed * s.pace, dt);
   e.bank *= 0.5;
   const pods = s.enemies.filter(q => q.type === 'pod' && q.parent === e.id && q.hp > 0);
   if(e.shielded && pods.length === 0){ e.shielded = false; ev(s, 'shieldDown', {x: e.x, y: e.y, z: e.z}); say(s, 'rosie', 'Its shield is down - hit the core!', 2.6); }
   const dist = distP(s, e);
   e.fireT -= dt; e.torpT -= dt;
   if(e.fireT <= 0 && dist < 520){
-    e.fireT = 2.6 * K.fire;
-    const base = aimAt(s, e, BOLT_SPEED);
+    e.fireT = 3.0 * K.fire;
+    const base = aimAt(s, e, BOLT_SPEED * s.pace);
     const r = norm(cross(base, {x: 0, y: 1, z: 0}));
     for(let i = -2; i <= 2; i++) bolt(s, e, norm({x: base.x + r.x * i * 0.06, y: base.y, z: base.z + r.z * i * 0.06}), 7);
   }
@@ -909,7 +912,7 @@ export function autopilot(s, skill){
   // a dodge, if something is about to hit
   for(const b of s.bolts){
     const dx = p.x - b.x, dy = p.y - b.y, dz = p.z - b.z, d = len(dx, dy, dz);
-    if(d < 45 && (dx * b.vx + dy * b.vy + dz * b.vz) / (d * BOLT_SPEED) > 0.97 && r() < skill * 0.5){ inp.roll = r() < 0.5 ? -1 : 1; break; }
+    if(d < 45 * s.pace && (dx * b.vx + dy * b.vy + dz * b.vz) / (d * BOLT_SPEED * s.pace) > 0.97 && r() < skill * 0.5){ inp.roll = r() < 0.5 ? -1 : 1; break; }
   }
   if(p.man) return inp;
   if(s.mode === 'rail') return railPilot(s, inp, skill);
@@ -983,7 +986,7 @@ function freePilot(s, inp, skill){
     // nothing yet: circle the middle
     d = {x: ARENA.x - p.x, y: 0, z: ARENA.z - p.z};
   } else {
-    const t = bd / SHOT_SPEED;
+    const t = bd / (SHOT_SPEED * s.pace);
     d = {x: best.x + (best.vx || 0) * t - p.x, y: best.y + (best.vy || 0) * t - p.y, z: best.z + (best.vz || 0) * t - p.z};
   }
   const dl = len(d.x, d.y, d.z) || 1;
@@ -991,8 +994,19 @@ function freePilot(s, inp, skill){
   // the ground and the rocks
   const g = Math.max(height(p.x, p.z), height(p.x + p.fx * 120, p.z + p.fz * 120));
   if(p.y < g + 55) d = norm({x: d.x, y: Math.max(d.y, 0.5), z: d.z});
-  const ob = hitObstacle(p.x + p.fx * 110, p.y + p.fy * 110, p.z + p.fz * 110, 20);
-  if(ob && ob.type === 'spire') d = norm({x: d.x + (p.x - ob.x) / 50, y: d.y + 0.7, z: d.z + (p.z - ob.z) / 50});
+  // the rocks: look a second or two ahead, and go round (or over) the first one in the way
+  for(const k of [0.5, 1, 1.6, 2.3]){
+    const L = p.speed * k;
+    const ob = hitObstacle(p.x + p.fx * L, p.y + p.fy * L, p.z + p.fz * L, 22);
+    if(ob && ob.type === 'spire'){
+      const ax = p.x - ob.x, az = p.z - ob.z, al = Math.hypot(ax, az) || 1;
+      // sideways, whichever way is already nearer, harder the closer it is
+      const sideX = -p.fz, sideZ = p.fx, sgn = (ax * sideX + az * sideZ) >= 0 ? 1 : -1;
+      const push = 2.5 / k;
+      d = norm({x: d.x + sideX * sgn * push + ax / al * 0.5, y: Math.max(d.y, 0) + (p.y > ob.h - 40 ? 0.8 : 0.1), z: d.z + sideZ * sgn * push + az / al * 0.5});
+      break;
+    }
+  }
   const f = {x: p.fx, y: p.fy, z: p.fz};
   const a = Math.acos(clamp(dot(f, d), -1, 1));
   if(s.style === 'level'){

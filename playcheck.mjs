@@ -93,7 +93,7 @@ ok(true, 'FLY! counts in and the game starts');
 const fire = await pg.$('#b-fire'), boost = await pg.$('#b-boost');
 const fb = await fire.boundingBox(), bb = await boost.boundingBox();
 const shotsBefore = await pg.evaluate(() => window.__dog.sim.stats.shots);
-for(let i = 0; i < 3; i++){ await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(160); }
+for(let i = 0; i < 3; i++){ await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(450); }
 const taps = await pg.evaluate(() => window.__dog.sim.stats.shots) - shotsBefore;
 ok(taps === 3, `three taps of FIRE, three shots (${taps})`);
 await pg.mouse.down();
@@ -118,6 +118,47 @@ await pg.click('#b-pause');
 await pg.waitForTimeout(200);
 ok(await pg.evaluate(() => window.__dog.state === 'pause') && await pg.isVisible('#pause'), 'the pause button pauses');
 await pg.close();
+
+console.log('\nThe camera through the moves');
+// Where Teddy's ship sits on the screen, every frame of a move. A camera
+// that swings or lags makes it jump; the old one jumped 40-70 px in a
+// frame going over the top of a loop.
+async function onScreen(pg, press, frames){
+  return pg.evaluate(async ([press, frames]) => {
+    const d = window.__dog, xs = [];
+    d.input.press[press] = true;
+    for(let i = 0; i < frames; i++){ await new Promise(r => requestAnimationFrame(r)); const p = d.sim.p, q = d.world.project(p.x, p.y, p.z); xs.push([q.x, q.y]); }
+    let jump = 0, lo = 1e9, hi = -1e9;
+    for(let i = 1; i < xs.length; i++){ jump = Math.max(jump, Math.hypot(xs[i][0] - xs[i - 1][0], xs[i][1] - xs[i - 1][1])); lo = Math.min(lo, xs[i][1]); hi = Math.max(hi, xs[i][1]); }
+    return {jump, travel: hi - lo};
+  }, [press, frames]);
+}
+const steady = async pg => { const t0 = await pg.evaluate(() => window.__dog.sim.t); await pg.waitForFunction(t0 => window.__dog.sim.t > t0 + 1.5, t0, {timeout: 60000, polling: 100}); };
+pg = await page('?seed=6&skill=pup', {hasTouch: true});
+await pg.click('#play');
+await pg.waitForFunction(() => window.__dog.state === 'play', null, {timeout: 15000});
+await steady(pg);
+let m = await onScreen(pg, 'loop', 60);
+ok(m.jump < 20, `rail loop: the ship moves at most ${m.jump.toFixed(0)} px in a frame`);
+await pg.waitForFunction(() => !window.__dog.sim.p.man, null, {timeout: 20000});
+m = await onScreen(pg, 'rollR', 25);
+ok(m.jump < 20, `rail barrel roll: at most ${m.jump.toFixed(0)} px in a frame`);
+await pg.close();
+for(const style of ['level', 'full']){
+  pg = await page(`?seed=6&skill=pup&start=arena&style=${style}`, {hasTouch: true});
+  await pg.click('#play');
+  await pg.waitForFunction(() => window.__dog.sim.mode === 'free', null, {timeout: 60000});
+  await pg.evaluate(() => { const s = window.__dog.sim; s.wave = 9; s.waveT = -1; s.enemies = []; s.p.y = 250; });
+  await steady(pg);
+  m = await onScreen(pg, 'loop', 70);
+  ok(m.jump < 20 && m.travel < 40, `${style}: through a loop the ship moves at most ${m.jump.toFixed(0)} px a frame, ${m.travel.toFixed(0)} px in all`);
+  await pg.waitForFunction(() => !window.__dog.sim.p.man, null, {timeout: 20000});
+  m = await onScreen(pg, 'uturn', 60);
+  ok(m.jump < 20 && m.travel < 40, `${style}: through a U-turn, at most ${m.jump.toFixed(0)} px a frame, ${m.travel.toFixed(0)} px in all`);
+  m = await onScreen(pg, 'rollR', 25);
+  ok(m.jump < 20, `${style}: a barrel roll, at most ${m.jump.toFixed(0)} px a frame`);
+  await pg.close();
+}
 
 console.log('\nThe clearing, flown by the computer');
 pg = await page('?auto=1&start=arena&seed=3');

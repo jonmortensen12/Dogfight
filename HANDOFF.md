@@ -25,7 +25,9 @@ and a boss), to find out whether flying by tilt is fun before building more.
 | `web/input.js` | Tilt (the phone's whole orientation from the centred grip), the thumb buttons, swipes, the keyboard, the drag stick when there is no sensor. |
 | `web/sound.js` | Night Watch's sound module, plus a whoosh and an engine rumble. |
 | `web/lib/` | three.js r170 and its bloom passes, copied from Night Watch. |
-| `web/music/` | Five pieces and some cues copied from Night Watch's `web/music/` (rendered by its `tools/music.py`). |
+| `web/music/` | Rendered by `tools/music.py`: four pieces (title, Red Canyon, Open Sky, the Brute) and two cues (victory, boss warning), plus a few short cues still borrowed from Night Watch (count, wave, clear, pickup, game over). |
+| `tools/music.py`, `tools/samples.py` | The music, written as notes and rendered from FluidR3 recordings. The engine is Night Watch's; the pieces are Dogfight's own. `samples.py` downloads the recordings to `tools/samples/` (63 MB, not committed) first. |
+| `DESIGN.md` | Where the game goes next: story, cast (the family's pets), levels, multiplayer. |
 | `simcheck.mjs`, `playcheck.mjs` | The checks. |
 | `tools/serve.mjs` | A plain file server for the checks and for playing on a laptop. |
 
@@ -42,7 +44,7 @@ deviceorientation-to-quaternion maths, the sound module and music.
   re-takes it at any time.
 - Laptop: the keys are listed under the controls below.
   No sensor: a thumb dragged on the left half of the screen is a stick.
-- URL options: `?start=arena` (skip the canyon), `?skill=pup|good|top`,
+- URL options: `?start=arena` (skip the canyon), `?skill=pup|good|top`, `?pace=1.5`,
   `?style=level|full`, `?auto=1` (the computer flies), `?low=1`, `?seed=N`.
 
 ## The controls (`input.js`)
@@ -171,14 +173,42 @@ rad/s) for 9 s, 10 damage; shoot them.
 enemy toughness ×0.8 / ×1 / ×1.25, dogfighter speed and turn ×0.8 / ×1 /
 ×1.15.
 
-**What simcheck says today** (three seeds each; the computer taps about
+**What simcheck says today** (five seeds each; the computer taps about
 six times a second, like a person, and charges shots at raiders and the
-Brute): a sharp pilot wins Good Boy 3/3 in level and 2/3 in full 3D, in
-2-4 minutes; a sloppy one wins Pup 3/3 and Good Boy 1/3; a sharp one loses
-Top Dog 3/3. The Brute went from 40 to 30 (pods 14 to 11) when holding
-FIRE stopped being automatic fire. simcheck also flies each move (rail
-loop, loop and U-turn in both styles), the charge and lock, and a barrel
-roll deflecting a bolt.
+Brute). At Good Boy, a sharp pilot wins 5/5 in level and 4/5 in full 3D at
+1×, 5/5 at the default 1.25×, and 4/5 at 1.5×. A sloppy pilot wins Pup 5/5
+and Good Boy 4/5. A sharp pilot loses Top Dog 5/5. The Brute went from 40
+to 30 (pods 14 to 11) when holding FIRE stopped being automatic fire; its
+torpedoes now do 8 and its bolt fans come every 3 s. The computer pilot
+used to fly into the buttes chasing the Brute (19 crashes in one fight),
+which made Good Boy look harder than it is. It now looks 0.5-2.3 s ahead
+and goes round. simcheck also flies each move (the rail loop, and the loop
+and U-turn in both styles), the charge and lock, and a barrel roll
+deflecting a bolt.
+
+## Speed
+
+A **Speed** setting on the title and pause screens (1×, 1.25×, 1.5×,
+1.75×, 2×; 1.25× by default) multiplies everything that moves: Teddy on the
+rail and in the clearing, the enemies, their bolts (whose range stays the
+same), your shots and charged shots. Turning rates stay the same, so faster
+also means wider turns. It is `s.pace` in the sim and can change mid-game.
+simcheck plays Good Boy at 1.25× and 1.5× as well as 1×. It is there to dial
+in; once it feels right it can become the game's own speed and go away.
+
+## The music (`tools/music.py`)
+
+Original pieces in the manner of a 90s console space shooter: a rock kit
+(synthesised kick, snare and hats), a synth bass jumping octaves in
+eighths, synth brass stabs, and trumpets and horns on big leaping tunes,
+with the flattened sixth and seventh chords that make it sound heroic.
+**Title** (C, 126 bpm, a march), **Red Canyon** (D, 152), **Open Sky** for
+the clearing (E minor, 156), **The Brute** (E phrygian, 162), a mission-
+complete fanfare and a boss warning. Nothing is copied from any game, only
+the style. Levels were balanced by measuring each instrument alone against
+the whole mix: the band about 8 dB under the tune, hats about 18 dB under.
+Re-render with `python3 tools/samples.py` (once) then `python3
+tools/music.py [name ...]`.
 
 ## Drawing it (`world.js`)
 
@@ -197,6 +227,19 @@ roll deflecting a bolt.
   floppy ears, tan eyebrows and cheeks, white blaze, tongue out).
 - A blob shadow under the ship (depth), dust when flying low, engine
   trails, speed specks in the air, a wider view on boost.
+- **The camera** (rewritten 2026-11-08 after "a noticeable jump" in rolls
+  and loops). Everything is smoothed as an offset from the ship, so the
+  ship's own speed never makes the picture lag. On the rail it is the
+  classic view behind the rail. In the clearing, and during the rail's
+  loop, it is a chase rig bolted behind the ship whose turning is smoothed
+  as a rotation (a quaternion slerp), so going over the top of a loop is
+  one swing with nothing to flip. The old camera's "up" came from a
+  sideways vector that flipped as the nose passed vertical. The two views
+  blend, and the rail view travels with the ship once the rail lets go.
+  On the rail, a barrel roll's sidestep is kept apart from the stick's
+  sliding, so it no longer swings the nose (it used to, by up to 50°).
+  `playcheck` measures how far Teddy's ship moves on the screen in a frame
+  through each move: now under 10 px. The old camera jumped 40–70 px.
 - Adaptive quality: more than 2 s of slow frames steps the pixel ratio
   down (1.25, 1, 0.8), then drops the bloom.
 
