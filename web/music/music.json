@@ -27,6 +27,34 @@
    "loopEnd": 49.53077097505669,
    "bpm": 156,
    "title": "Open Sky"
+  },
+  "space": {
+   "file": "space.mp3",
+   "loopStart": 0.3,
+   "loopEnd": 52.902743764172335,
+   "bpm": 146,
+   "title": "Among the Rocks"
+  },
+  "alley": {
+   "file": "alley.mp3",
+   "loopStart": 0.3,
+   "loopEnd": 34.58571428571428,
+   "bpm": 168,
+   "title": "Alley Cats"
+  },
+  "mittens": {
+   "file": "mittens.mp3",
+   "loopStart": 0.3,
+   "loopEnd": 33.02727891156462,
+   "bpm": 176,
+   "title": "Emperor Mittens"
+  },
+  "ending": {
+   "file": "ending.mp3",
+   "loopStart": 0.3,
+   "loopEnd": 42.03913832199546,
+   "bpm": 92,
+   "title": "Good Dogs"
   }
  },
  "cues": {

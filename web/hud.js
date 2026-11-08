@@ -1,3 +1,4 @@
+import {CAST} from './cast.js';
 /* Dogfight - the heads-up display, drawn on a 2D canvas over the 3D view.
 
    The reticle (two boxes ahead of the nose: line them up and that is where
@@ -56,39 +57,109 @@ export function drawTeddy(g, s){
   g.fillStyle = '#e0a830'; g.beginPath(); g.arc(50, 90, 4, 0, 7); g.fill();
   g.restore();
 }
-/* Rosie, at base: a corgi with a headset. */
-export function drawRosie(g, s){
+/* Anyone else, from their entry in cast.js: a dog, a cat or a rabbit in
+   their own colours, with their ears. If the entry has a photo, the photo
+   is used instead once it has loaded. */
+export function drawPet(g, s, pet){
   g.save(); g.scale(s / 100, s / 100);
-  g.fillStyle = '#3a2a40'; g.fillRect(0, 0, 100, 100);
-  g.fillStyle = '#d98a3a';
-  g.beginPath(); g.moveTo(24, 40); g.lineTo(18, 6); g.lineTo(44, 28); g.closePath(); g.fill();
-  g.beginPath(); g.moveTo(76, 40); g.lineTo(82, 6); g.lineTo(56, 28); g.closePath(); g.fill();
-  g.fillStyle = '#f2b6a0';
-  g.beginPath(); g.moveTo(26, 34); g.lineTo(22, 14); g.lineTo(38, 29); g.closePath(); g.fill();
-  g.beginPath(); g.moveTo(74, 34); g.lineTo(78, 14); g.lineTo(62, 29); g.closePath(); g.fill();
-  g.fillStyle = '#d98a3a'; g.beginPath(); g.ellipse(50, 52, 30, 27, 0, 0, 7); g.fill();
-  g.fillStyle = '#fbf6ee'; g.beginPath(); g.moveTo(46, 30); g.lineTo(54, 30); g.lineTo(62, 62); g.lineTo(38, 62); g.closePath(); g.fill();
-  g.beginPath(); g.ellipse(50, 66, 17, 12, 0, 0, 7); g.fill();
-  g.fillStyle = '#20140c'; g.beginPath(); g.arc(39, 48, 3.6, 0, 7); g.fill(); g.beginPath(); g.arc(61, 48, 3.6, 0, 7); g.fill();
-  g.fillStyle = '#fff'; g.beginPath(); g.arc(40, 47, 1.1, 0, 7); g.fill(); g.beginPath(); g.arc(62, 47, 1.1, 0, 7); g.fill();
-  g.fillStyle = '#100a08'; g.beginPath(); g.ellipse(50, 60, 5.5, 3.8, 0, 0, 7); g.fill();
-  g.strokeStyle = '#3a2418'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(44, 69); g.quadraticCurveTo(50, 73, 56, 69); g.stroke();
-  // headset
-  g.strokeStyle = '#222'; g.lineWidth = 4; g.beginPath(); g.arc(50, 50, 34, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
-  g.fillStyle = '#333'; g.fillRect(12, 44, 9, 16);
-  g.strokeStyle = '#333'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(17, 58); g.quadraticCurveTo(22, 74, 38, 72); g.stroke();
-  g.fillStyle = '#d33'; g.beginPath(); g.arc(38, 72, 2.5, 0, 7); g.fill();
-  g.fillStyle = '#2f6fd0'; g.fillRect(26, 84, 48, 16);
+  const villain = pet.role === 'Villain' || pet.role === 'Ace';
+  g.fillStyle = villain ? '#3a1830' : pet.role === 'Base' || pet.role === 'Mechanic' ? '#3a2a40' : '#20324a'; g.fillRect(0, 0, 100, 100);
+  g.fillStyle = villain ? '#5a2848' : '#2d4766'; g.beginPath(); g.arc(50, 120, 70, 0, 7); g.fill();
+  const fur = pet.fur, patch = pet.patch || fur, muz = pet.muzzle || patch;
+  const ear = (x, flip) => {
+    g.fillStyle = fur;
+    if(pet.kind === 'rabbit'){ g.beginPath(); g.ellipse(x, 14, 8, 26, flip * 0.15, 0, 7); g.fill(); g.fillStyle = '#f2b6a0'; g.beginPath(); g.ellipse(x, 16, 4, 18, flip * 0.15, 0, 7); g.fill(); return; }
+    if(pet.ears === 'floppy'){ g.beginPath(); g.ellipse(x + flip * 6, 56, 12, 22, flip * -0.3, 0, 7); g.fill(); return; }
+    if(pet.ears === 'round'){ g.beginPath(); g.arc(x + flip * 4, 26, 12, 0, 7); g.fill(); return; }
+    // pointy
+    g.beginPath(); g.moveTo(x - 12, 36); g.lineTo(x + flip * 4, pet.kind === 'cat' ? 6 : 8); g.lineTo(x + 12, 34); g.closePath(); g.fill();
+    g.fillStyle = '#f2b6a0'; g.beginPath(); g.moveTo(x - 6, 33); g.lineTo(x + flip * 3, 15); g.lineTo(x + 6, 32); g.closePath(); g.fill();
+  };
+  if(pet.ears !== 'floppy') { ear(28, -1); ear(72, 1); }
+  // head
+  g.fillStyle = fur; g.beginPath(); g.ellipse(50, 50, pet.kind === 'cat' ? 30 : 28, 27, 0, 0, 7); g.fill();
+  if(pet.ears === 'floppy') { ear(24, -1); ear(76, 1); }
+  // blaze and muzzle
+  g.fillStyle = patch;
+  g.beginPath(); g.moveTo(46, 28); g.lineTo(54, 28); g.lineTo(58, 56); g.lineTo(42, 56); g.closePath(); g.fill();
+  g.fillStyle = muz;
+  if(pet.kind === 'cat'){ g.beginPath(); g.ellipse(43, 62, 9, 7, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(57, 62, 9, 7, 0, 0, 7); g.fill(); }
+  else { g.beginPath(); g.ellipse(50, 63, 14, 11, 0, 0, 7); g.fill(); }
+  // eyes
+  const eye = (x) => {
+    if(pet.kind === 'cat'){
+      g.fillStyle = pet.eyes; g.beginPath(); g.ellipse(x, 46, 5.5, 4.5, 0, 0, 7); g.fill();
+      g.fillStyle = '#111'; g.beginPath(); g.ellipse(x, 46, 1.4, 4, 0, 0, 7); g.fill();
+      if(villain){ g.strokeStyle = '#111'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(x - 7, 38 + (x < 50 ? -2 : 3)); g.lineTo(x + 7, 38 + (x < 50 ? 3 : -2)); g.stroke(); }
+    } else {
+      g.fillStyle = pet.eyes; g.beginPath(); g.arc(x, 46, 4, 0, 7); g.fill();
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(x + 1.3, 44.7, 1.3, 0, 7); g.fill();
+    }
+  };
+  eye(39); eye(61);
+  // nose and mouth
+  g.fillStyle = pet.kind === 'cat' || pet.kind === 'rabbit' ? '#e0808a' : '#100a08';
+  g.beginPath();
+  if(pet.kind === 'dog') g.ellipse(50, 58, 6, 4.2, 0, 0, 7); else { g.moveTo(46, 56); g.lineTo(54, 56); g.lineTo(50, 60); g.closePath(); }
+  g.fill();
+  g.strokeStyle = '#2a1a14'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(44, 67); g.quadraticCurveTo(47, 70, 50, 66); g.quadraticCurveTo(53, 70, 56, 67); g.stroke();
+  if(pet.kind === 'cat'){
+    g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1;
+    for(const sx of [-1, 1]) for(const dy of [-3, 0, 3]){ g.beginPath(); g.moveTo(50 + sx * 10, 62 + dy * 0.5); g.lineTo(50 + sx * 30, 60 + dy * 2); g.stroke(); }
+  }
+  if(pet.kind === 'rabbit'){ g.fillStyle = '#fff'; g.fillRect(47, 68, 3, 4); g.fillRect(50.5, 68, 3, 4); }
+  // Mittens' crown; Rosie's headset; Hops' goggles
+  if(pet.role === 'Villain'){
+    g.fillStyle = '#e8b830'; g.beginPath(); g.moveTo(34, 26); g.lineTo(38, 12); g.lineTo(44, 22); g.lineTo(50, 8); g.lineTo(56, 22); g.lineTo(62, 12); g.lineTo(66, 26); g.closePath(); g.fill();
+    g.fillStyle = '#d02040'; g.beginPath(); g.arc(50, 20, 2.5, 0, 7); g.fill();
+  }
+  if(pet.headset){
+    g.strokeStyle = '#222'; g.lineWidth = 4; g.beginPath(); g.arc(50, 50, 34, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    g.fillStyle = '#333'; g.fillRect(12, 44, 9, 16);
+    g.strokeStyle = '#333'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(17, 58); g.quadraticCurveTo(22, 74, 38, 72); g.stroke();
+  }
+  if(pet.role === 'Mechanic'){
+    g.strokeStyle = '#5a3a20'; g.lineWidth = 3; g.beginPath(); g.moveTo(22, 36); g.lineTo(78, 36); g.stroke();
+    g.fillStyle = 'rgba(140,220,255,0.8)'; g.strokeStyle = '#5a3a20';
+    for(const x of [39, 61]){ g.beginPath(); g.arc(x, 38, 8, 0, 7); g.fill(); g.stroke(); }
+  }
+  // collar
+  g.fillStyle = villain ? '#6a1a3a' : '#2f6fd0'; g.fillRect(26, 84, 48, 16);
   g.restore();
 }
-function portrait(fn){ const c = document.createElement('canvas'); c.width = c.height = 128; fn(c.getContext('2d'), 128); return c; }
-export const FACES = {teddy: null, rosie: null};
-export const NAMES = {teddy: 'TEDDY', rosie: 'ROSIE · BASE'};
+export function drawRosie(g, s){ drawPet(g, s, CAST.rosie); }
+
+const faceCache = {};
+/* The radio portrait for anyone in the cast: drawn, or their photo. */
+export function face(who){
+  if(faceCache[who]) return faceCache[who];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const pet = CAST[who];
+  if(who === 'teddy') drawTeddy(g, 128);
+  else if(pet) drawPet(g, 128, pet);
+  if(pet && pet.photo){
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(im.width, im.height);
+      g.drawImage(im, (im.width - k) / 2, (im.height - k) / 2, k, k, 0, 0, 128, 128);
+    };
+    im.src = pet.photo;
+  }
+  faceCache[who] = c;
+  return c;
+}
+export function nameOf(who){
+  const pet = CAST[who];
+  if(!pet) return who.toUpperCase();
+  const n = pet.name.toUpperCase();
+  return pet.role === 'Base' ? n + ' · BASE' : pet.role === 'Mechanic' ? n + ' · MECHANIC' : pet.role === 'Villain' ? n : pet.role === 'Ace' ? n + ' · ALLEY CATS' : n;
+}
+export const VOICE = {teddy: '#7ae6ff', wing1: '#ffb24a', wing2: '#ff6a5a', wing3: '#8ab8ff', rosie: '#ffb060', hops: '#c8e0a0', mittens: '#e070c0', ace1: '#ff7090', ace2: '#ff7090', ace3: '#ff7090', ace4: '#ff7090'};
 
 export class Hud {
   constructor(canvas){
     this.c = canvas; this.g = canvas.getContext('2d');
-    FACES.teddy = portrait(drawTeddy); FACES.rosie = portrait(drawRosie);
     this.radio = null; this.queue = [];
     this.hurt = 0; this.banner = null; this.lockPulse = 0; this.deflectT = 0;
     this.resize();
@@ -154,20 +225,55 @@ export class Hud {
     if(p.twin) line += '   TWIN';
     line += '   ' + '🦴'.repeat(s.stats.gold) + '·'.repeat(Math.max(0, s.stats.goldTotal - s.stats.gold));
     g.fillText(line, x0, y0 + 62);
+    // the wingmates: a face and a health bar each; a red ring when one is in trouble
+    let ay = y0 + 80;
+    for(const a of s.allies){
+      if(a.gone) continue;
+      const fz = 22, trouble = a.chased && Math.floor(performance.now() / 250) % 2 === 0;
+      g.drawImage(face(a.id), x0, ay, fz, fz);
+      g.strokeStyle = trouble ? '#ff4a3a' : (VOICE[a.id] || '#fff'); g.lineWidth = trouble ? 3 : 1.5; g.strokeRect(x0, ay, fz, fz);
+      g.fillStyle = 'rgba(0,0,0,0.35)'; roundRect(g, x0 + fz + 5, ay + 8, 60, 6, 3); g.fill();
+      g.fillStyle = a.hp > 50 ? '#5cf08a' : a.hp > 25 ? '#ffd040' : '#ff4a3a'; roundRect(g, x0 + fz + 5, ay + 8, 60 * Math.max(0, a.hp) / 100, 6, 3); g.fill();
+      if(a.chased){ g.font = font(10, 800); g.fillStyle = '#ff6a5a'; g.fillText('HELP!', x0 + fz + 70, ay + 4); }
+      ay += fz + 4;
+    }
+    // the Moon's clock
+    if(s.timer != null && s.phase !== 'won'){
+      const t = Math.max(0, s.timer), mm = Math.floor(t / 60), ss = Math.floor(t % 60);
+      g.font = font(22, 900); g.textAlign = 'center';
+      g.fillStyle = t < 30 && Math.floor(performance.now() / 300) % 2 ? '#ff4a3a' : '#ffe0a0';
+      g.fillText('MOON FALLS IN ' + mm + ':' + String(ss).padStart(2, '0'), W / 2, 92);
+      g.textAlign = 'left';
+    }
+    if(p.confused > 0){
+      g.save(); g.translate(W / 2, H * 0.7); g.rotate(Math.sin(performance.now() / 120) * 0.15);
+      g.font = font(16, 900); g.textAlign = 'center'; g.fillStyle = `hsl(${(performance.now() / 5) % 360},90%,70%)`;
+      g.fillText('CATNIP! CONTROLS BACKWARDS', 0, 0); g.restore(); g.textAlign = 'left';
+    }
 
     // ---- radar, in the clearing ----
     if(s.mode === 'free') this.radar(s, g, W - 78 - (view.safeR || 0), 78, 60);
 
     // ---- the boss ----
     if(s.boss){
-      const b = s.boss, pods = s.enemies.filter(e => e.type === 'pod');
+      const b = s.boss;
+      let hp = 0, max = 0, shielded = false;
+      if(b.aces || b.engines){
+        for(const e of s.enemies) if((b.aces && e.boss && e.type === 'ace') || (b.engines && e.kind === 'engine')){ hp += e.hp; max += e.maxHp; }
+        max = Math.max(max, b.aces ? 4 * 14 * s.K.hp : 4 * 14 * s.K.hp);
+      } else {
+        hp = Math.max(0, b.hp); max = b.maxHp;
+        for(const e of s.enemies) if(e.parent === b.id){ hp += e.hp; max += e.maxHp; }
+        if(!b.maxParts) b.maxParts = max;
+        max = b.maxParts; shielded = !!b.shielded;
+      }
       const w = Math.min(320, W * 0.4), x = W / 2 - w / 2, y = 58;
+      const name = b.type === 'mittensShip' ? 'MITTENS - ON THE RUN!' : (s.L.boss && s.L.boss.name) || 'BOSS';
       g.font = font(11); g.fillStyle = '#e8b0ff'; g.textAlign = 'center';
-      g.fillText(b.shielded ? 'THE BRUTE  -  shoot its engines' : 'THE BRUTE  -  the core is open!', W / 2, y);
+      g.fillText(shielded ? name + '  -  break its shield parts' : name, W / 2, y);
       g.textAlign = 'left';
       g.fillStyle = 'rgba(0,0,0,0.4)'; roundRect(g, x, y + 16, w, 9, 4); g.fill();
-      const hp = b.hp / b.maxHp + pods.reduce((a, q) => a + q.hp / q.maxHp, 0);
-      g.fillStyle = b.shielded ? '#b060ff' : '#ff4a7a'; roundRect(g, x, y + 16, w * hp / 3, 9, 4); g.fill();
+      g.fillStyle = shielded ? '#b060ff' : '#ff4a7a'; roundRect(g, x, y + 16, w * Math.min(1, hp / Math.max(1, max)), 9, 4); g.fill();
     }
 
     // ---- warnings ----
@@ -236,12 +342,12 @@ export class Hud {
   enemyMarks(s, world, g, W, H, font){
     const p = s.p, free = s.mode === 'free';
     for(const e of s.enemies){
-      if(e.x < -9e4 || e.type === 'pod') continue;
+      if(e.x < -9e4) continue;
       const dx = e.x - p.x, dy = e.y - p.y, dz = e.z - p.z, d = Math.hypot(dx, dy, dz);
       if(d > 1100) continue;
       const q = world.project(e.x, e.y, e.z);
       const on = !q.behind && q.x > 20 && q.x < W - 20 && q.y > 20 && q.y < H - 20;
-      const col = e.type === 'torpedo' ? '#ff4080' : e.type === 'brute' ? '#d070ff' : '#ff6a4a';
+      const col = e.type === 'cage' ? '#fff0a0' : e.type === 'torpedo' || e.type === 'planet' ? '#ff4080' : e.type === 'boss' || e.type === 'part' ? (e.shielded ? '#7a5a9a' : '#d070ff') : e.type === 'ace' ? '#ffb030' : '#ff6a4a';
       if(on){
         if(d < 40 || (!free && d > 600)) continue;
         const r = Math.max(9, Math.min(40, (e.r + 2) * 420 / d));
@@ -252,8 +358,9 @@ export class Hud {
           g.moveTo(q.x + sx * r, q.y + sy * (r - c)); g.lineTo(q.x + sx * r, q.y + sy * r); g.lineTo(q.x + sx * (r - c), q.y + sy * r);
         }
         g.stroke();
-        if(e.type === 'torpedo'){ g.font = font(10, 800); g.fillStyle = col; g.textAlign = 'center'; g.fillText('TORPEDO', q.x, q.y - r - 6); g.textAlign = 'left'; }
-        if(e.maxHp > 4 && e.type !== 'brute'){ g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(q.x - r, q.y + r + 4, r * 2, 3); g.fillStyle = col; g.fillRect(q.x - r, q.y + r + 4, r * 2 * e.hp / e.maxHp, 3); }
+        const tag = e.type === 'torpedo' ? 'TORPEDO' : e.type === 'cage' ? 'PUP!' : e.type === 'ace' && e.who ? (CAST[e.who] || {}).name : e.type === 'planet' ? 'PLANET!' : e.hunt ? 'ON ' + ((CAST[e.hunt] || {}).name || '').toUpperCase() + "'S TAIL" : '';
+        if(tag){ g.font = font(10, 800); g.fillStyle = col; g.textAlign = 'center'; g.fillText(tag, q.x, q.y - r - 6); g.textAlign = 'left'; }
+        if(e.maxHp > 4 && e.type !== 'boss'){ g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(q.x - r, q.y + r + 4, r * 2, 3); g.fillStyle = col; g.fillRect(q.x - r, q.y + r + 4, r * 2 * e.hp / e.maxHp, 3); }
       } else if(free){
         // an arrow at the edge, pointing the way round to it
         let ax = q.nx, ay = q.ny;
@@ -262,7 +369,7 @@ export class Hud {
         const m = 34, hw = W / 2 - m, hh = H / 2 - m;
         const t = Math.min(hw / Math.abs(ax || 1e-6), hh / Math.abs(ay || 1e-6));
         const x = W / 2 + ax * t, y = H / 2 - ay * t;
-        const big = e.type === 'torpedo' ? 1.4 + 0.3 * Math.sin(performance.now() / 90) : e.type === 'brute' ? 1.5 : 1;
+        const big = e.type === 'torpedo' || e.type === 'planet' ? 1.4 + 0.3 * Math.sin(performance.now() / 90) : e.type === 'boss' ? 1.5 : 1;
         g.save(); g.translate(x, y); g.rotate(Math.atan2(-ay, ax));
         g.fillStyle = col; g.globalAlpha = Math.max(0.35, 1 - d / 1100);
         g.beginPath(); g.moveTo(12 * big, 0); g.lineTo(-7 * big, -8 * big); g.lineTo(-3 * big, 0); g.lineTo(-7 * big, 8 * big); g.closePath(); g.fill();
@@ -286,18 +393,22 @@ export class Hud {
       return [fx * scale, fz * scale];
     };
     for(const e of s.enemies){
-      if(e.type === 'pod') continue;
       let [x, y] = toR(e.x, e.z);
       const l = Math.hypot(x, y);
       if(l > R - 3){ x *= (R - 3) / l; y *= (R - 3) / l; }
-      g.fillStyle = e.type === 'torpedo' ? '#ff4080' : e.type === 'brute' ? '#d070ff' : '#ff6a4a';
-      const r = e.type === 'brute' ? 5 : 3;
+      g.fillStyle = e.type === 'cage' ? '#fff0a0' : e.type === 'torpedo' || e.type === 'planet' ? '#ff4080' : e.type === 'boss' || e.type === 'part' ? '#d070ff' : '#ff6a4a';
+      const r = e.type === 'boss' ? 5 : 3;
       const above = e.y > p.y + 40 ? -1 : e.y < p.y - 40 ? 1 : 0;
       g.beginPath();
       if(above < 0){ g.moveTo(cx + x, cy + y - r - 1); g.lineTo(cx + x + r, cy + y + r); g.lineTo(cx + x - r, cy + y + r); }
       else if(above > 0){ g.moveTo(cx + x, cy + y + r + 1); g.lineTo(cx + x + r, cy + y - r); g.lineTo(cx + x - r, cy + y - r); }
       else g.arc(cx + x, cy + y, r, 0, 7);
       g.fill();
+    }
+    for(const a of s.allies){
+      if(a.gone) continue;
+      let [x, y] = toR(a.x, a.z); const l = Math.hypot(x, y); if(l > R - 3){ x *= (R - 3) / l; y *= (R - 3) / l; }
+      g.fillStyle = VOICE[a.id] || '#7ae6ff'; g.beginPath(); g.arc(cx + x, cy + y, 3, 0, 7); g.fill();
     }
     // the clearing's edge
     g.strokeStyle = 'rgba(255,200,120,0.5)'; g.beginPath();
@@ -323,10 +434,11 @@ export class Hud {
     const w = Math.min(W * 0.52, 430), x = W / 2 - w / 2, y = H - sz - 22 - (view.radioLift || 0);
     g.globalAlpha = a;
     g.fillStyle = 'rgba(8,14,24,0.7)'; roundRect(g, x, y, w, sz + 8, 10); g.fill();
-    g.drawImage(FACES[r.who] || FACES.teddy, x + 4, y + 4, sz, sz);
-    g.strokeStyle = r.who === 'teddy' ? '#7ae6ff' : '#ffb060'; g.lineWidth = 2; g.strokeRect(x + 4, y + 4, sz, sz);
-    g.font = font(10, 800); g.fillStyle = r.who === 'teddy' ? '#7ae6ff' : '#ffb060'; g.textBaseline = 'top';
-    g.fillText(NAMES[r.who] || r.who, x + sz + 14, y + 8);
+    const col = VOICE[r.who] || '#ffb060';
+    g.drawImage(face(r.who), x + 4, y + 4, sz, sz);
+    g.strokeStyle = col; g.lineWidth = 2; g.strokeRect(x + 4, y + 4, sz, sz);
+    g.font = font(10, 800); g.fillStyle = col; g.textBaseline = 'top';
+    g.fillText(nameOf(r.who), x + sz + 14, y + 8);
     g.font = font(13, 600); g.fillStyle = '#fff';
     const shown = r.text.slice(0, Math.floor(r.t * 45));
     wrapText(g, shown, x + sz + 14, y + 24, w - sz - 24, 17 * Math.max(0.8, Math.min(1.3, Math.min(W, H) / 400)));

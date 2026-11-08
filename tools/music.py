@@ -68,8 +68,11 @@ INST = {
     'sbrass':   dict(gm='synth_brass_1', gain=0.34, pan=-0.1, send=0.3, rel=0.15, sus=True),
     'sbass':    dict(gm='synth_bass_1', gain=0.55, pan=0.0, send=0.08, rel=0.06, sus=False, ring=0.1),
     'sstr':     dict(gm='synth_strings_1', gain=0.3, pan=0.1, send=0.45, rel=0.5, sus=True),
-    'lead':     dict(gm='lead_2_sawtooth', gain=0.16, pan=0.15, send=0.35, rel=0.15, sus=True),
+    'lead':     dict(gm='lead_2_sawtooth', gain=0.3, pan=0.15, send=0.35, rel=0.15, sus=True),
     'ebass':    dict(gm='electric_bass_finger', gain=0.5, pan=0.0, send=0.1, rel=0.08, sus=False, ring=0.15),
+    'sax':      dict(gm='alto_sax', gain=0.5, pan=0.15, send=0.35, rel=0.15, sus=True),
+    'mute':     dict(gm='muted_trumpet', gain=0.42, pan=-0.2, send=0.35, rel=0.12, sus=True),
+    'vibes':    dict(gm='vibraphone', gain=0.36, pan=0.3, send=0.45, rel=0.6, sus=False, ring=1.2),
 }
 
 _cache = {}
@@ -580,9 +583,137 @@ def c_bosswarn(sc):
     sc.drum('crash', 7, 0.8)
 
 
-LOOPS = {'title': title, 'canyon': canyon, 'clearing': clearing, 'boss': boss}
+def space():
+    """Out among the rocks: a pulsing synth arpeggio, low strings, the brass
+    tune soaring over it. A minor into C, 146 bpm."""
+    sc = Score(146, 32, seed=91)
+    A = ['Am', 'F', 'C', 'G', 'Am', 'F', 'G', 'E']
+    B = ['F', 'G', 'Em', 'Am', 'F', 'G', 'C', 'E']
+    prog = ['Am', 'Am', 'F', 'E'] + A + B + A + ['F', 'G', 'F', 'E']
+    for bar, ch in enumerate(prog):
+        sect = 'intro' if bar < 4 else 'A' if bar < 12 else 'B' if bar < 20 else "A'" if bar < 28 else 'turn'
+        ostinato(sc, 'lead', bar, ch, [0, 1, 2, 3, 2, 1, 2, 3, 0, 1, 2, 3, 2, 1, 2, 3], 57, 79, 0.7, step=0.25, dur=0.22)
+        octbass(sc, bar, ch, lo=28, vel=0.6)
+        pad(sc, 'sstr', bar, ch, 52, 69, 0.34)
+        if sect != 'intro':
+            kit(sc, bar, fill=bar in (11, 19, 27, 31), light=sect == 'B')
+        else:
+            sc.drum('kick', bar * 4, 0.8); sc.drum('kick', bar * 4 + 2, 0.7)
+        if sect in ('B', "A'"):
+            pad(sc, 'choir', bar, ch, 55, 67, 0.3)
+    melA = ['E5:1.5 A5:0.5 C6:2', 'C6:1 A5:1 F5:2', 'G5:1.5 E5:0.5 C5:1 E5:1', 'D5:3 r:1',
+            'E5:1.5 A5:0.5 C6:2', 'D6:1 C6:1 A5:1 F5:1', 'G5:1 A5:1 B5:1 D6:1', 'B5:2 G#5:2']
+    melB = ['A5:2 C6:1 A5:1', 'B5:2 D6:2', 'G5:1.5 B5:0.5 E6:2', 'C6:3 r:1',
+            'A5:1 C6:1 F6:2', 'E6:1 D6:1 B5:2', 'C6:1 G5:1 E5:1 C6:1', 'B5:2 G#5:2']
+    for i, ln in enumerate(melA):
+        sc.line('trumpet', (4 + i) * 4, ln, 0.78)
+        sc.line('trumpet', (20 + i) * 4, ln, 0.84)
+        sc.line('horn', (20 + i) * 4, ln, 0.6, shift=-12)
+    for i, ln in enumerate(melB):
+        sc.line('horn', (12 + i) * 4, ln, 0.8, shift=-12)
+        sc.line('strings', (12 + i) * 4, ln, 0.42)
+    for bar in (4, 12, 20, 28):
+        sc.note('revcym', bar * 4, 0.1, 'C4', 0.5)
+        sc.drum('crash', bar * 4, 0.8)
+    return sc
+
+
+def alley():
+    """The Alley Cats: a cool-cat swing. A walking bass, brushes, vibes,
+    muted trumpet and sax trading the tune. F minor, 168 bpm, swung."""
+    sc = Score(168, 24, seed=101)
+    prog = ['Fm', 'Fm', 'Bbm', 'Bbm', 'Fm', 'Fm', 'C', 'C',
+            'Db', 'C', 'Fm', 'C', 'Fm', 'Fm', 'Bbm', 'Bbm', 'Fm', 'Db', 'C', 'C', 'Db', 'C', 'Fm', 'C']
+    sw = lambda b: b + (0.16 if (b * 2) % 2 == 1 else 0)    # swing the off-beats
+    for bar, ch in enumerate(prog):
+        bass, pcs, root = chord(ch)
+        r = near(root, 28, 39)
+        walk = [r, r + (3 if 3 in [(x - root) % 12 for x in pcs] else 4), r + 7, r + 6]
+        for k, m in enumerate(walk):
+            sc.note('bass', bar * 4 + k, 0.9, m, 0.65)
+        for k in range(8):
+            b = bar * 4 + k * 0.5
+            sc.drum('hat', sw(b), 0.35 if k % 2 else 0.5)
+        for k in (1, 3):
+            sc.drum('snare', bar * 4 + k, 0.22)
+        sc.drum('kick', bar * 4, 0.5)
+        for b in (0, 1.5, 2.5):
+            sc.hold('vibes', sw(bar * 4 + b), 0.4, voice(pcs, 60, 72), 0.4)
+        sc.hold('piano', bar * 4 + 0.5 + 0.16, 0.3, voice(pcs, 55, 67), 0.35)
+    mel = ['C5:0.66 Eb5:0.34 F5:1 Ab5:1 G5:1', 'F5:2 r:1 C5:1', 'Db5:0.66 F5:0.34 Bb5:1 Ab5:1 F5:1', 'Ab5:3 r:1',
+           'C5:0.66 Eb5:0.34 F5:1 Ab5:1 C6:1', 'Bb5:1 Ab5:1 F5:2', 'E5:1 G5:1 Bb5:1 Db6:1', 'C6:3 r:1']
+    for i, ln in enumerate(mel):
+        sc.line('mute', i * 4 + 0.16, ln, 0.8)
+        sc.line('sax', (8 + i) * 4 + 0.16, ln, 0.8, shift=-12)
+        sc.line('mute', (16 + i) * 4 + 0.16, ln, 0.84)
+        sc.line('sax', (16 + i) * 4 + 0.16, ln, 0.6, shift=-12)
+    for bar in (0, 8, 16):
+        sc.drum('crash', bar * 4, 0.6)
+    return sc
+
+
+def mittens():
+    """Emperor Mittens: a grand, sinister, faintly ridiculous waltz.
+    Harpsichord, organ and choir, brass that pounces on beat one. D minor, 3/4."""
+    sc = Score(176, 32, beats=3, seed=111)
+    A = ['Dm', 'Dm', 'Gm', 'Gm', 'A', 'A', 'Dm', 'A']
+    B = ['Bb', 'Bb', 'Gm', 'Gm', 'Em', 'A', 'Dm', 'A']
+    prog = A + A + B + A
+    for bar, ch in enumerate(prog):
+        bass, pcs, root = chord(ch)
+        b = bar * 3
+        sc.note('tuba', b, 1, near(bass, 33, 44), 0.7)
+        sc.note('timp', b, 1, near(bass, 38, 50), 0.6)
+        for k in (1, 2):
+            sc.hold('harpsi', b + k, 0.8, voice(pcs, 55, 67), 0.5)
+        pad(sc, 'organ', bar, ch, 50, 64, 0.28, beats=3)
+        if bar >= 8:
+            pad(sc, 'choir', bar, ch, 55, 69, 0.36, beats=3)
+            sc.hold('brass', b, 0.5, voice(pcs, 50, 62), 0.6)
+        sc.drum('kick', b, 0.45)
+        sc.drum('snare', b + 1, 0.12); sc.drum('snare', b + 2, 0.12)
+    mel = ['D5:1.5 E5:0.5 F5:1', 'A5:2 G5:1', 'Bb5:1.5 A5:0.5 G5:1', 'D5:3', 'C#5:1 E5:1 A5:1', 'G5:1.5 F5:0.5 E5:1', 'F5:1 E5:1 D5:1', 'C#5:3']
+    melB = ['D6:1.5 C6:0.5 Bb5:1', 'F5:3', 'G5:1 Bb5:1 D6:1', 'Bb5:3', 'G5:1.5 F5:0.5 E5:1', 'C#5:1 E5:1 A5:1', 'D5:2 F5:1', 'E5:3']
+    for i, ln in enumerate(mel):
+        sc.line('harpsi', i * 3, ln, 0.7, shift=12)
+        sc.line('oboe', (8 + i) * 3, ln, 0.7)
+        sc.line('trumpet', (24 + i) * 3, ln, 0.84)
+        sc.line('horn', (24 + i) * 3, ln, 0.6, shift=-12)
+    for i, ln in enumerate(melB):
+        sc.line('strings', (16 + i) * 3, ln, 0.5)
+        sc.line('horn', (16 + i) * 3, ln, 0.72, shift=-12)
+    for bar in (0, 8, 16, 24):
+        sc.drum('crash', bar * 3, 0.7)
+        sc.note('hit', bar * 3, 0.5, 'D4', 0.5)
+    return sc
+
+
+def ending():
+    """The end: Dogfight's theme, slow and grand. Strings, horns, choir,
+    bells. C major, 92 bpm."""
+    sc = Score(92, 16, seed=121)
+    prog = ['C', 'Am', 'F', 'G', 'C', 'Ab', 'Bb', 'C', 'F', 'G', 'Em', 'Am', 'F', 'Ab', 'Bb', 'C']
+    for bar, ch in enumerate(prog):
+        pad(sc, 'strings', bar, ch, 48, 72, 0.45)
+        pad(sc, 'choir', bar, ch, 55, 67, 0.32 if bar >= 8 else 0.2)
+        sc.note('bass', bar * 4, 4, near(chord(ch)[0], 26, 37), 0.5)
+        sc.note('timp', bar * 4, 1, near(chord(ch)[0], 38, 50), 0.4)
+        ostinato(sc, 'harp', bar, ch, [0, 1, 2, 3, 4, 3, 2, 1], 55, 84, 0.4)
+    mel = ['G4:1 C5:1 G5:2', 'E5:1.5 D5:0.5 C5:2', 'F5:1 A5:1 C6:2', 'B5:2 D5:2',
+           'G4:1 C5:1 G5:2', 'Ab5:1.5 G5:0.5 Eb5:2', 'F5:1 D5:1 Bb4:2', 'C5:4',
+           'A5:2 C6:2', 'B5:1.5 A5:0.5 G5:2', 'E5:1 G5:1 B5:2', 'A5:4',
+           'F5:1 A5:1 C6:2', 'Eb6:2 C6:2', 'D6:1 Bb5:1 F5:2', 'C6:4']
+    for i, ln in enumerate(mel):
+        sc.line('horn', i * 4, ln, 0.75, shift=-12)
+        if i >= 8: sc.line('trumpet', i * 4, ln, 0.72)
+    for bar in (0, 8, 15):
+        sc.note('bells', bar * 4, 3, 'C5', 0.5)
+    return sc
+
+
+LOOPS = {'title': title, 'canyon': canyon, 'clearing': clearing, 'boss': boss, 'space': space, 'alley': alley, 'mittens': mittens, 'ending': ending}
 CUES = {'victory': (132, 2, c_victory), 'bosswarn': (100, 2, c_bosswarn)}
-TITLES = {'title': 'Dogfight', 'canyon': 'Red Canyon', 'clearing': 'Open Sky', 'boss': 'The Brute'}
+TITLES = {'title': 'Dogfight', 'canyon': 'Red Canyon', 'clearing': 'Open Sky', 'boss': 'The Brute', 'space': 'Among the Rocks', 'alley': 'Alley Cats', 'mittens': 'Emperor Mittens', 'ending': 'Good Dogs'}
 EDGE = 0.3        # seconds of wrap-around either side of a loop
 
 

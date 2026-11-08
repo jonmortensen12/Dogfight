@@ -7,6 +7,8 @@
       FIRE shoots, BOOST speeds up, a swipe rolls.
    4. The computer flies the clearing (?auto=1&start=arena) and clears
       the first wave, with the radar and arrows drawn.
+   5. The adventure: the route map, a briefing, a level won, the map
+      moving on, and every planet loading and drawing without an error.
    Screenshots go to /tmp/dogfight-*.png. Takes about a minute. */
 import {createRequire} from 'node:module';
 import {serve} from './tools/serve.mjs';
@@ -85,11 +87,27 @@ ok(steer.wheelLeft.sr < -0.3 && small(steer.wheelLeft.sx), `turned anticlockwise
 ok(steer.awayInverted > 0.4, 'inverted: tipped away noses up');
 await pg.close();
 
+/* Start a game: from the adventure (the map, Red Canyon, the briefing), or a
+   level straight from the URL (?level=...) by skipping its briefing. */
+async function startGame(pg){
+  if(await pg.evaluate(() => new URLSearchParams(location.search).has('level'))){
+    await pg.waitForSelector('#brief:not(.hide)', {timeout: 15000});
+    await pg.click('#briefskip');
+  } else {
+    await pg.click('#adventure');
+    await pg.waitForSelector('#map:not(.hide)');
+    await pg.click('.node[data-id="canyon"]');
+    await pg.click('#launch');
+    await pg.waitForSelector('#brief:not(.hide)');
+    await pg.click('#briefskip');
+  }
+  await pg.waitForFunction(() => window.__dog.state === 'play', null, {timeout: 15000});
+}
+
 console.log('\nA game, by hand');
 pg = await page('?seed=4', {hasTouch: true});
-await pg.click('#play');
-await pg.waitForFunction(() => window.__dog.state === 'play', null, {timeout: 15000});
-ok(true, 'FLY! counts in and the game starts');
+await startGame(pg);
+ok(true, 'ADVENTURE, the map, Red Canyon, the briefing, the count - and the game starts');
 const fire = await pg.$('#b-fire'), boost = await pg.$('#b-boost');
 const fb = await fire.boundingBox(), bb = await boost.boundingBox();
 const shotsBefore = await pg.evaluate(() => window.__dog.sim.stats.shots);
@@ -135,8 +153,7 @@ async function onScreen(pg, press, frames){
 }
 const steady = async pg => { const t0 = await pg.evaluate(() => window.__dog.sim.t); await pg.waitForFunction(t0 => window.__dog.sim.t > t0 + 1.5, t0, {timeout: 60000, polling: 100}); };
 pg = await page('?seed=6&skill=pup', {hasTouch: true});
-await pg.click('#play');
-await pg.waitForFunction(() => window.__dog.state === 'play', null, {timeout: 15000});
+await startGame(pg);
 await steady(pg);
 let m = await onScreen(pg, 'loop', 60);
 ok(m.jump < 20, `rail loop: the ship moves at most ${m.jump.toFixed(0)} px in a frame`);
@@ -145,8 +162,8 @@ m = await onScreen(pg, 'rollR', 25);
 ok(m.jump < 20, `rail barrel roll: at most ${m.jump.toFixed(0)} px in a frame`);
 await pg.close();
 for(const style of ['level', 'full']){
-  pg = await page(`?seed=6&skill=pup&start=arena&style=${style}`, {hasTouch: true});
-  await pg.click('#play');
+  pg = await page(`?level=canyon&seed=6&skill=pup&start=arena&style=${style}`, {hasTouch: true});
+  await startGame(pg);
   await pg.waitForFunction(() => window.__dog.sim.mode === 'free', null, {timeout: 60000});
   await pg.evaluate(() => { const s = window.__dog.sim; s.wave = 9; s.waveT = -1; s.enemies = []; s.p.y = 250; });
   await steady(pg);
@@ -161,7 +178,7 @@ for(const style of ['level', 'full']){
 }
 
 console.log('\nThe clearing, flown by the computer');
-pg = await page('?auto=1&start=arena&seed=3');
+pg = await page('?auto=1&level=canyon&start=arena&seed=3');
 await pg.waitForFunction(() => window.__dog.sim.mode === 'free', null, {timeout: 60000});
 ok(true, 'the rail lets go at the clearing');
 await pg.waitForFunction(() => window.__dog.sim.wave >= 1 && window.__dog.sim.enemies.length > 0, null, {timeout: 60000});
@@ -170,6 +187,50 @@ await pg.screenshot({path: '/tmp/dogfight-clearing.png'});
 const w2 = await pg.waitForFunction(() => window.__dog.sim.wave >= 2, null, {timeout: 150000}).then(() => true, () => false);
 ok(w2, 'the first wave is cleared and the second comes in');
 await pg.close();
+
+console.log('\nThe adventure');
+pg = await page('?seed=8', {hasTouch: true});
+await pg.evaluate(() => localStorage.removeItem('dogfight-save'));
+await pg.reload();
+await pg.waitForFunction(() => window.__dog && window.__dog.state === 'title');
+await pg.click('#adventure');
+await pg.waitForSelector('#map:not(.hide)');
+ok(await pg.evaluate(() => document.querySelectorAll('.node.next').length === 1 && !!document.querySelector('.node.next[data-id="canyon"]')), 'a new adventure starts with Red Canyon the only planet open');
+await pg.click('.node[data-id="canyon"]');
+await pg.click('#launch');
+await pg.waitForSelector('#brief:not(.hide)');
+const lines = [];
+for(let i = 0; i < 8; i++){
+  if(await pg.isHidden('#brief')) break;
+  lines.push(await pg.textContent('#briefwho'));
+  await pg.click('#briefnext');
+}
+ok(lines.length >= 3 && lines.includes('TEDDY') && lines.some(l => l.startsWith('ROSIE')), `the briefing plays on the radio (${lines.join(', ')})`);
+await pg.waitForFunction(() => window.__dog.state === 'play', null, {timeout: 15000});
+// win it on the spot: the boss is beaten
+await pg.evaluate(() => { const s = window.__dog.sim; s.phase = 'won'; s.clearT = 5.9; s.events.push({k: 'won'}); });
+await pg.waitForSelector('#result:not(.hide)', {timeout: 20000});
+ok(await pg.evaluate(() => window.__dog.save.flown.includes('canyon')), 'winning Red Canyon is saved');
+await pg.click('#again');
+await pg.waitForSelector('#map:not(.hide)');
+const open = await pg.evaluate(() => [...document.querySelectorAll('.node.next')].map(n => n.dataset.id).sort().join(','));
+ok(open === 'thunder,tidewater', `the map moves on: Tidewater or Thunder Peaks next (${open})`);
+await pg.close();
+
+pg = await page('');
+const planets = await pg.evaluate(() => Object.keys(window.__dog.LEVELS));
+await pg.close();
+for(const id of planets){
+  pg = await page(`?auto=1&level=${id}&seed=2`);
+  await pg.waitForFunction(() => window.__dog.state === 'play' && window.__dog.sim.t > 1.5, null, {timeout: 60000, polling: 200});
+  const tris = await pg.evaluate(() => new Promise(r => {
+    const R = window.__dog.world.renderer; R.info.autoReset = false; R.info.reset();
+    requestAnimationFrame(() => requestAnimationFrame(() => { const n = R.info.render.triangles; R.info.autoReset = true; r(n); }));
+  }));
+  await pg.screenshot({path: `/tmp/dogfight-${id}.png`});
+  ok(tris > 2000, `${id}: loads and draws (${tris} triangles a frame)`);
+  await pg.close();
+}
 
 ok(errors.length === 0, 'no errors in the page' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 await browser.close(); srv.close();

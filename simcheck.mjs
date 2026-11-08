@@ -1,83 +1,110 @@
 /* Dogfight - the simulation, headless. node simcheck.mjs
 
-   1. The canyon is flyable: the rail's box never runs into rock, and every
-      arch leaves room to fly under it.
-   2. The computer pilot (sim.js autopilot) flies the whole level at each
-      difficulty and in both clearing styles, and the results land where
-      they should: a sharp pilot clears Good Boy, a sloppy one clears Pup,
-      Top Dog is a real fight, nothing goes NaN, the same seed plays the
-      same game.
-   Exits non-zero if anything that should hold does not. */
+   1. Every level's rail is flyable: no rock inside the rail's box, room
+      under every arch, and a gap through every row of spires or asteroids.
+   2. The computer pilot (sim.js autopilot) flies every level of the
+      adventure, with the wingmates who would be along by then, at the
+      game's default speed: a sharp pilot clears Good Boy and a sloppy one
+      clears Pup, on every planet. Top Dog is a real fight. Full 3D works.
+   3. The story happens: wingmates join where they should, call for help
+      and get saved, pups get rescued at the Kennel, Mittens has a second
+      phase, the Moon can fall.
+   4. The moves (loops, U-turns, the charge and lock, barrel rolls).
+   5. The same seed plays the same game.
+   Exits non-zero if anything that should hold does not. Takes a minute or two. */
 import {newSim, step, autopilot, SKILLS, LOOP, CHARGE} from './web/sim.js';
-import {height, halfW, railFrame, OBSTACLES, archUnder, CANYON_END, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN} from './web/terrain.js';
+import {setLevel, height, halfW, railFrame, railPoint, archUnder, spireR, spireTop, hitObstacle, RAIL_END, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN, GROUND} from './web/terrain.js';
+import * as T from './web/terrain.js';
+import {LEVELS, ORDER} from './web/levels.js';
+import {WINGS} from './web/cast.js';
 
 let fails = 0;
 const ok = (cond, msg) => { console.log((cond ? '  ok   ' : '  FAIL ') + msg); if(!cond) fails++; };
 
-console.log('The canyon');
-let worst = -1e9, worstU = 0;
-for(let u = 0; u <= CANYON_END; u += 4){
-  const f = railFrame(u), lim = halfW(u) - WALL_MARGIN;
-  for(let ox = -lim; ox <= lim; ox += 2){
-    const h = height(f.x + f.rx * ox, f.z + f.rz * ox);
-    if(h > worst){ worst = h; worstU = u; }
+console.log('Every rail is flyable');
+for(const id of ORDER){
+  const L = setLevel(LEVELS[id]);
+  const end = L.railBossU || RAIL_END;
+  let worst = -1e9, blocked = 0, tightest = 1e9;
+  for(let u = 0; u <= end; u += 5){
+    const lim = halfW(u) - WALL_MARGIN;
+    if(GROUND !== 'space') for(let ox = -lim; ox <= lim; ox += 3){ const q = railPoint(u, ox, 0); worst = Math.max(worst, height(q.x, q.z)); }
+    // is there a way through at this u? sample the box for a point clear of everything by 8 m
+    let clear = 0, n = 0;
+    for(let ox = -lim; ox <= lim; ox += 4) for(let y = Math.max(RAIL_FLOOR + 4, worst > -1e8 ? 6 : RAIL_FLOOR + 4); y <= RAIL_TOP - 4; y += 6){
+      const q = railPoint(u, ox, y); n++;
+      if(!hitObstacle(q.x, y, q.z, 8) && y > height(q.x, q.z) + 8) clear++;
+    }
+    if(clear === 0) blocked++;
+    tightest = Math.min(tightest, clear / n);
   }
-}
-ok(worst < RAIL_TOP - 20, `rock inside the rail's box peaks at ${worst.toFixed(1)} m (u ${worstU}); the box is ${RAIL_FLOOR}-${RAIL_TOP} m`);
-for(const o of OBSTACLES.filter(o => o.type === 'arch')){
-  const lim = halfW(o.u) - WALL_MARGIN;
-  const lowest = Math.min(archUnder(o, lim), archUnder(o, -lim));
-  ok(lowest > RAIL_FLOOR + 14, `arch at u ${o.u}: ${lowest.toFixed(0)} m of room under it at the walls, ${archUnder(o, 0).toFixed(0)} m in the middle`);
+  const arches = T.OBSTACLES.filter(o => o.type === 'arch');
+  const lowArch = arches.length ? Math.min(...arches.map(o => { const lim = halfW(o.u) - WALL_MARGIN; return Math.min(archUnder(o, lim), archUnder(o, -lim)); })) : null;
+  ok((GROUND === 'space' || worst < RAIL_TOP - 20) && blocked === 0 && (lowArch == null || lowArch > RAIL_FLOOR + 14),
+    `${LEVELS[id].name}: ${GROUND === 'space' ? 'space' : `rock in the box peaks at ${worst.toFixed(0)} m`}, ${T.OBSTACLES.length} obstacles, never blocked (tightest: ${(tightest * 100).toFixed(0)}% of the box clear)${lowArch != null ? `, lowest arch ${lowArch.toFixed(0)} m` : ''}`);
 }
 
-function run(skill, style, pilot, seed, start, pace){
-  const s = newSim({skill, style, seed, start, pace});
+function allies(id){ const n = LEVELS[id].n; return WINGS.filter((w, i) => n >= [1, 3, 4][i]); }
+function run(id, skill, style, pilot, seed, pace, start){
+  const s = newSim({level: id, skill, style, seed, pace: pace || 1.25, start, allies: allies(id)});
   const dt = 1 / 60;
-  let t = 0, crashes = 0, arenaAt = null, shieldAtArena = null, nan = false;
-  while(t < 600 && !s.done && !s.failed){
+  let t = 0, crashes = 0, railT = null, railShield = null, nan = false;
+  const seen = {join: 0, help: 0, rescue: 0, faces: 0, timeout: 0};
+  while(t < 900 && !s.done && !s.failed){
     step(s, dt, autopilot(s, pilot));
-    for(const e of s.events) if(e.k === 'hurt' && e.why === 'crash') crashes++;
+    for(const e of s.events){
+      if(e.k === 'hurt' && e.why === 'crash') crashes++;
+      if(e.k in seen) seen[e.k]++;
+      if(e.k === 'boom' && e.type === 'mittensFace') seen.faces++;
+    }
     s.events.length = 0;
     t += dt;
-    if(arenaAt == null && s.mode === 'free'){ arenaAt = t; shieldAtArena = s.p.shield; }
-    if(!Number.isFinite(s.p.x + s.p.y + s.p.z + s.p.fx + s.p.ux)) { nan = true; break; }
+    if(railT == null && (s.mode === 'free' || s.phase === 'railboss')){ railT = t; railShield = s.p.shield; }
+    if(!Number.isFinite(s.p.x + s.p.y + s.p.z + s.p.fx + s.p.ux)){ nan = true; break; }
   }
-  return {won: s.done, t, arenaAt, shieldAtArena, shield: s.p.shield, kills: s.stats.kills, crashes, nan,
-    acc: s.stats.shots ? s.stats.hits / s.stats.shots : 0, wave: s.wave, x: s.p.x};
+  return {won: s.done, t, railT, railShield, shield: s.p.shield, kills: s.stats.kills, crashes, nan, seen, s,
+    acc: s.stats.shots ? s.stats.hits / s.stats.shots : 0, why: s.failWhy, saved: s.stats.saved, rescued: s.stats.rescued, allies: s.allies.filter(a => !a.gone).map(a => a.id)};
 }
-const fmt = r => `${r.won ? 'WON ' : 'lost'} in ${r.t.toFixed(0)} s, canyon ${r.arenaAt ? r.arenaAt.toFixed(0) + ' s (shield ' + r.shieldAtArena.toFixed(0) + ')' : 'not finished'}, shield ${r.shield.toFixed(0)}, ${r.kills} down, ${r.crashes} bumps, acc ${(r.acc * 100).toFixed(0)}%, wave ${r.wave}`;
+const fmt = r => `${r.won ? 'WON ' : 'lost'} ${r.t.toFixed(0)} s (rail ${r.railT ? r.railT.toFixed(0) + ' s, shield ' + r.railShield.toFixed(0) : '-'}), shield ${r.shield.toFixed(0)}, ${r.kills} down, ${r.crashes} bumps, acc ${(r.acc * 100).toFixed(0)}%${r.why && !r.won ? ', ' + r.why : ''}`;
 
-const SEEDS = [3, 11, 29, 41, 57];
-const table = {};
-console.log('\nThe computer pilot, five games each');
-for(const [skill, style, pilot, label, pace] of [
-  ['good', 'level', 0.85, 'sharp pilot, Good Boy, level'],
-  ['good', 'full', 0.85, 'sharp pilot, Good Boy, full 3D'],
-  ['pup', 'level', 0.5, 'sloppy pilot, Pup'],
-  ['good', 'level', 0.5, 'sloppy pilot, Good Boy'],
-  ['top', 'level', 0.85, 'sharp pilot, Top Dog'],
-  ['good', 'level', 0.85, 'sharp pilot, Good Boy, 1.25x speed (the game\'s default)', 1.25],
-  ['good', 'level', 0.85, 'sharp pilot, Good Boy, 1.5x speed', 1.5],
-  ['good', 'full', 0.85, 'sharp pilot, Good Boy, full 3D, 1.5x speed', 1.5],
-]){
-  const rs = SEEDS.map(seed => run(skill, style, pilot, seed, undefined, pace));
-  table[label] = rs;
-  console.log(' ' + label);
-  for(const r of rs) console.log('    ' + fmt(r));
-  ok(!rs.some(r => r.nan), 'nothing went NaN');
-  const canyon = CANYON_END / (60 * (pace || 1));
-  ok(rs.every(r => r.arenaAt && Math.abs(r.arenaAt - canyon) < canyon * 0.15), `the canyon takes about ${canyon.toFixed(0)} s at ${pace || 1}x`);
+const SEEDS = [3, 11, 29];
+const results = {};
+console.log('\nThe adventure, flown by the computer at 1.25x, three games a planet');
+for(const id of ORDER){
+  const sharp = SEEDS.map(seed => run(id, 'good', 'level', 0.85, seed));
+  const sloppy = SEEDS.map(seed => run(id, 'pup', 'level', 0.5, seed));
+  results[id] = {sharp, sloppy};
+  console.log(` ${LEVELS[id].n}. ${LEVELS[id].name}`);
+  for(const r of sharp) console.log('    sharp, Good Boy: ' + fmt(r));
+  for(const r of sloppy) console.log('    sloppy, Pup:     ' + fmt(r));
+  ok(![...sharp, ...sloppy].some(r => r.nan), 'nothing went NaN');
+  ok(sharp.filter(r => r.won).length >= 2, 'a sharp pilot clears it on Good Boy (2 of 3)');
+  ok(sloppy.filter(r => r.won).length >= 2, 'a sloppy pilot clears it on Pup (2 of 3)');
+  ok(sharp.filter(r => r.won).every(r => r.t > 60 && r.t < 420), 'a win takes 1 to 7 minutes');
 }
-const wins = l => table[l].filter(r => r.won).length;
-ok(wins('sharp pilot, Good Boy, level') >= 3, 'a sharp pilot clears Good Boy (at least 3 of 5)');
-ok(wins('sloppy pilot, Pup') >= 4, 'a sloppy pilot clears Pup (at least 4 of 5)');
-ok(wins('sharp pilot, Top Dog') <= 3, 'Top Dog is not a walkover (the sharp pilot loses at least 2 of 5)');
-ok(wins("sharp pilot, Good Boy, 1.25x speed (the game's default)") >= 3, 'at the default 1.25x a sharp pilot still clears Good Boy');
-ok(wins('sharp pilot, Good Boy, 1.5x speed') + wins('sharp pilot, Good Boy, full 3D, 1.5x speed') >= 5, 'at 1.5x it is still winnable');
-ok(table['sharp pilot, Good Boy, full 3D'].every(r => r.wave >= 2), 'full-3D flying works well enough for the computer to reach wave 2');
-ok(table['sharp pilot, Good Boy, level'].every(r => r.shieldAtArena > 40), 'the canyon leaves a sharp pilot more than 40 shield');
-const won = table['sharp pilot, Good Boy, level'].filter(r => r.won);
-ok(won.every(r => r.t > 120 && r.t < 330), 'a winning run lasts 2 to 5.5 minutes');
+
+console.log('\nTop Dog and full 3D');
+const top = ['canyon', 'thunder', 'lair'].flatMap(id => SEEDS.map(seed => run(id, 'top', 'level', 0.85, seed)));
+console.log('    Top Dog, sharp pilot (canyon, thunder, lair): ' + top.map(r => r.won ? 'W' : 'l').join(''));
+ok(top.filter(r => !r.won).length >= 3, 'Top Dog is not a walkover (the sharp pilot loses at least 3 of 9)');
+const full = ['canyon', 'yarn', 'lair'].flatMap(id => SEEDS.map(seed => run(id, 'good', 'full', 0.85, seed)));
+console.log('    Full 3D, sharp pilot, Good Boy (canyon, yarn, lair): ' + full.map(r => r.won ? 'W' : 'l').join(''));
+ok(full.filter(r => r.won).length >= 5, 'full-3D flying is winnable (at least 5 of 9)');
+
+console.log('\nThe story happens');
+const R = id => results[id].sharp.concat(results[id].sloppy);
+ok(R('tidewater').some(r => r.seen.join && r.allies.includes('wing2')) && R('thunder').some(r => r.seen.join && r.allies.includes('wing2')), 'the second wingmate joins on Tidewater and on Thunder Peaks');
+ok(R('kennel').some(r => r.rescued >= 3 && r.allies.includes('wing3')), 'pups are rescued at the Kennel, and the third wingmate with them');
+ok(R('frost').some(r => r.seen.join && r.allies.includes('wing3')), 'the third wingmate is found on Frost Fang');
+ok(ORDER.some(id => R(id).some(r => r.seen.help && r.saved)), 'a wingmate calls for help and gets saved');
+ok(R('lair').some(r => r.won && r.seen.faces === 1), "Mittens' face breaks and the chase is on before she is beaten");
+{
+  // the Moon falls if you dawdle
+  const s = newSim({level: 'moonfall', seed: 5, start: 'arena', pace: 1.25});
+  let t = 0, fell = false;
+  while(t < 400 && !s.failed){ step(s, 1 / 60, {}); for(const e of s.events) if(e.k === 'timeout') fell = true; s.events.length = 0; t += 1 / 60; }
+  ok(fell && s.failWhy.includes('Moon'), `doing nothing at Moonfall, the Moon falls (after ${t.toFixed(0)} s)`);
+}
 
 console.log('\nThe moves');
 {
@@ -145,8 +172,8 @@ for(const style of ['level', 'full']){
 }
 
 console.log('\nSame seed, same game');
-const a = run('good', 'level', 0.85, 5), b = run('good', 'level', 0.85, 5);
-ok(a.t === b.t && a.kills === b.kills && a.x === b.x, 'two runs with seed 5 match exactly');
+const a = run('jungle', 'good', 'level', 0.85, 5), b = run('jungle', 'good', 'level', 0.85, 5);
+ok(a.t === b.t && a.kills === b.kills && a.s.p.x === b.s.p.x, 'two runs of Catnip Jungle with seed 5 match exactly');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall good');
 process.exit(fails ? 1 : 0);

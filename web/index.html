@@ -76,6 +76,28 @@
   @keyframes turn { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
   @media (orientation: portrait) and (pointer: coarse) { #rotate.want { display: flex !important; } }
   #loading { z-index: 60; background: #1a2433; font-weight: 800; letter-spacing: 0.1em; }
+  .cont { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 6px; }
+  #map, #brief { background: radial-gradient(ellipse at 50% 40%, rgba(30,20,60,0.75), rgba(5,8,16,0.92)); }
+  .mapwrap { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  .maphead { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 20px; color: #ffcf9a; }
+  #mapsvg { flex: 1; min-height: 0; width: 100%; }
+  .mapinfo { min-height: 44px; font-size: 14px; color: rgba(255,255,255,0.85); text-align: center; }
+  .mapinfo .go { margin: 4px 0 0; }
+  .node { cursor: pointer; }
+  .node text { fill: #fff; font: 700 12px system-ui, sans-serif; text-anchor: middle; pointer-events: none; }
+  .node.locked { opacity: 0.35; cursor: default; }
+  .node.next circle.body { animation: glow 1.4s ease-in-out infinite; }
+  @keyframes glow { 50% { stroke-width: 6; stroke: #fff6b0; } }
+  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-bottom: 8px; }
+  .levels button { text-align: left; }
+  .levels small { display: block; font-weight: 500; opacity: 0.7; font-size: 11px; }
+  .briefbox { width: min(640px, 100%); background: rgba(10,16,28,0.85); border: 1px solid rgba(255,255,255,0.15); border-radius: 16px; padding: 14px 16px; }
+  .briefhead { display: flex; justify-content: space-between; font-weight: 900; color: #ffcf9a; margin-bottom: 10px; }
+  .briefhead #briefplanet { color: rgba(255,255,255,0.6); font-weight: 600; font-size: 13px; }
+  .briefline { display: flex; gap: 12px; align-items: flex-start; min-height: 96px; }
+  #briefface { width: 88px; height: 88px; border-radius: 12px; border: 2px solid #ffb060; flex: none; }
+  #briefwho { font-weight: 800; font-size: 12px; letter-spacing: 0.08em; margin-bottom: 4px; }
+  #brieftext { font-size: 17px; line-height: 1.35; }
 </style>
 </head>
 <body>
@@ -99,7 +121,21 @@
 <div class="screen hide" id="title">
   <div class="panel">
     <div class="head"><canvas class="face" id="tface" width="128" height="128"></canvas><h1>DOG<br>FIGHT</h1></div>
-    <div class="sub">Teddy's Squadron · prototype</div>
+    <div class="sub">Teddy's Squadron</div>
+    <button class="go" id="adventure">ADVENTURE</button>
+    <div class="cont" id="contline"></div>
+    <div class="row" style="margin-top:6px">
+      <button class="go small ghost" id="freeplay">Free play</button>
+      <button class="go small ghost" id="settings">Settings</button>
+      <button class="go small ghost hide" id="newgame">New adventure</button>
+    </div>
+    <div class="hint">Hold the phone sideways like a controller - it is the ship. Pull the left side towards you to turn left, tip the top away to dive, turn it like a wheel to roll. <b>Tap FIRE</b> to shoot; <b>hold it</b> to charge, aim at an enemy to lock on, and let go. <b>LOOP</b> gets behind whatever is behind you. Swipe sideways to barrel-roll: it knocks shots away.</div>
+  </div>
+</div>
+
+<div class="screen hide" id="setup">
+  <div class="panel">
+    <div style="font-weight:900;font-size:22px;margin-bottom:4px">Settings</div>
     <div class="row"><label>Difficulty</label>
       <button class="chip" data-opt="skill" data-v="pup">Pup</button>
       <button class="chip" data-opt="skill" data-v="good">Good Boy</button>
@@ -118,11 +154,45 @@
       <button class="chip" data-opt="sens" data-v="1">Normal</button>
       <button class="chip" data-opt="sens" data-v="1.35">Twitchy</button>
       <button class="chip" data-opt="invert" data-v="toggle">Invert</button></div>
+    <button class="go small" id="setupdone">DONE</button>
+  </div>
+</div>
+
+<div class="screen hide" id="map">
+  <div class="mapwrap">
+    <div class="maphead"><span id="maptitle">The Dog Star System</span><button class="go small ghost" id="mapback">Title</button></div>
+    <svg id="mapsvg" viewBox="0 0 700 260" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="mapinfo" id="mapinfo">Tap a glowing planet.</div>
+  </div>
+</div>
+
+<div class="screen hide" id="free">
+  <div class="panel">
+    <div style="font-weight:900;font-size:22px;margin-bottom:6px">Free play</div>
+    <div class="levels" id="levellist"></div>
     <div class="row"><label>Start at</label>
-      <button class="chip" data-opt="start" data-v="canyon">The canyon</button>
-      <button class="chip" data-opt="start" data-v="arena">The clearing</button></div>
-    <button class="go" id="play">FLY!</button>
-    <div class="hint">Hold the phone sideways like a controller - it is the ship. Pull the left side towards you to turn left, tip the top away to dive, turn it like a wheel to roll. <b>Tap FIRE</b> to shoot; <b>hold it</b> to charge, aim at an enemy to lock on, and let go. <b>LOOP</b> gets behind whatever is behind you. Swipe sideways to barrel-roll: it knocks shots away.</div>
+      <button class="chip" data-opt="start" data-v="canyon">The start</button>
+      <button class="chip" data-opt="start" data-v="arena">The end of the rail</button></div>
+    <button class="go small ghost" id="freeback">Back</button>
+  </div>
+</div>
+
+<div class="screen hide" id="brief">
+  <div class="briefbox">
+    <div class="briefhead"><span id="briefname"></span><span id="briefplanet"></span></div>
+    <div class="briefline"><canvas id="briefface" width="128" height="128"></canvas><div><div id="briefwho"></div><div id="brieftext"></div></div></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="go small ghost" id="briefskip">Skip</button>
+      <button class="go small" id="briefnext">NEXT</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen hide" id="ending">
+  <div class="panel" style="text-align:center">
+    <div style="font-size:clamp(30px,9vh,56px);font-weight:900;color:#ffcf9a">THE END</div>
+    <div class="hint" id="credits" style="text-align:center"></div>
+    <button class="go small" id="endok">TITLE</button>
   </div>
 </div>
 
@@ -137,6 +207,10 @@
 <div class="screen hide" id="pause">
   <div class="panel">
     <div style="font-weight:900;font-size:24px;margin-bottom:6px">Paused</div>
+    <div class="row"><label>Difficulty</label>
+      <button class="chip" data-opt="skill" data-v="pup">Pup</button>
+      <button class="chip" data-opt="skill" data-v="good">Good Boy</button>
+      <button class="chip" data-opt="skill" data-v="top">Top Dog</button></div>
     <div class="row"><label>Clearing</label>
       <button class="chip" data-opt="style" data-v="level">Level horizon</button>
       <button class="chip" data-opt="style" data-v="full">Full 3D</button></div>
@@ -154,7 +228,7 @@
     <button class="go small" id="resume">RESUME</button>
     <button class="go small ghost" id="recentre">Centre tilt</button>
     <button class="go small ghost" id="restart">Restart</button>
-    <button class="go small ghost" id="quit">Title</button>
+    <button class="go small ghost" id="quit">Quit</button>
   </div>
 </div>
 
@@ -163,9 +237,9 @@
     <div style="font-weight:900;font-size:24px" id="rtitle">Mission complete</div>
     <div class="rank" id="rank"></div>
     <table id="rtable"></table>
-    <button class="go small" id="again">FLY AGAIN</button>
+    <button class="go small" id="again">CONTINUE</button>
     <button class="go small ghost" id="other"></button>
-    <button class="go small ghost" id="rquit">Title</button>
+    <button class="go small ghost" id="rquit">Quit</button>
   </div>
 </div>
 

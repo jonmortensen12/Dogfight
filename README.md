@@ -1,10 +1,11 @@
 # Dogfight — Teddy's Squadron
 
-A phone flying game: hold the phone sideways like a controller and tilt it
-to fly. Teddy (a Bernedoodle) flies down Red Canyon on rails, then breaks
-out into a clearing for free 3D dogfights and a boss.
+A silly space adventure for phones: hold the phone sideways like a
+controller and it is the ship. Teddy (a Bernedoodle) and his squadron of
+the family's pets fly ten planets on a branching route to stop Emperor
+Mittens, a cat who knocks planets off the table.
 
-Prototype: one level, three difficulties, two ways of flying in the open.
-See `HANDOFF.md`.
+See `HANDOFF.md` for how it works, `DESIGN.md` for the design, and
+`web/cast.js` to put the pets in.
 
 Play locally: `node tools/serve.mjs`, then open http://localhost:8080/.

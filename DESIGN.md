@@ -1,7 +1,13 @@
 # Dogfight — design notes
 
-Where the game could go after the prototype. Nothing here is built except
-Red Canyon. Written 2026-11-08 from Jon's asks: more levels and a story,
+**Status (2026-11-08):** the single-player adventure below is built:
+the story, ten planets and the route map, the wingmates, every boss,
+Mittens and the ending (see HANDOFF.md, and `web/levels.js` for the
+script). The cast are placeholders until the real pets go into
+`web/cast.js`. Multiplayer is not built yet. Tone, from Jon: silly all the
+way.
+
+Written 2026-11-08 from Jon's asks: more levels and a story,
 the family's pets as the cast, a cat as the final boss, and multiplayer
 without players getting too far ahead or behind. Names marked *(name?)* are
 placeholders waiting for the real pets.

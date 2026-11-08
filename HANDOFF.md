@@ -1,51 +1,75 @@
 # Dogfight — handoff
 
-A phone flying game in the rail-shooter genre, with free 3D dogfights. Hold
-the phone sideways in both hands like a controller; tilting it is the stick,
-and a few thumb buttons do the rest. The hero is Teddy, a black, tan and
-white Bernedoodle. The enemy is the Hiss, a cat air force (their ships have
-ears). Working title.
+A silly space adventure for phones in the rail-shooter genre, with free 3D
+dogfights. Hold the phone sideways in both hands like a controller; it is
+the ship. The hero is Teddy, a black, tan and white Bernedoodle, with a
+squadron of the family's pets. The villain is Emperor Mittens, a cat
+banished for knocking things off tables, back with an empire of cats (the
+Hiss) to knock planets out of orbit.
 
-Built from the plan agreed in conversation (2026-11-07): solo for now with
-co-op later, landscape with two thumbs, animal characters, Teddy as the
-lead, and "try both" level-horizon and full-3D flying. This is the **feel
-prototype**: one level (a canyon on rails, then a clearing with free flight
-and a boss), to find out whether flying by tilt is fun before building more.
+History: a feel prototype (2026-11-07, Red Canyon only), then the controls
+(the phone as the ship, a charge shot, loops), then own music, a speed
+setting and a new camera, then (2026-11-08, "silly all the way, build the
+whole adventure, placeholders for the pets") the full adventure: ten
+planets on a branching route, wingmates, bosses, the ending.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `web/index.html` | The page: the canvases, the thumb buttons, the title / count / pause / results screens. |
-| `web/main.js` | The loop, the screens, settings (kept in localStorage), sound for each event, adaptive quality. |
-| `web/sim.js` | Everything that happens. Pure, deterministic (seeded), no drawing. Also the computer pilot (`autopilot`). |
-| `web/terrain.js` | The ground: one `height(x, z)` function, plus spires and arches. Shared by the sim and the renderer. |
-| `web/world.js` | three.js: the ground meshes, sky, ringed planet, Teddy's ship, enemy ships, effects, the camera. |
-| `web/hud.js` | The 2D overlay: reticle, lock, markers and edge arrows, radar, shield/boost/bombs, boss bar, warnings, the radio with drawn portraits of Teddy and Rosie. |
-| `web/input.js` | Tilt (the phone's whole orientation from the centred grip), the thumb buttons, swipes, the keyboard, the drag stick when there is no sensor. |
+| `web/cast.js` | **The cast. Where the family's pets go.** Names, animal, colours, ears, an optional photo, their lines. Everyone but Teddy is a placeholder. |
+| `web/levels.js` | **The adventure, as data**: every level's ground, look, script, waves, boss, briefing, outro, the route. The story is told at its top. |
+| `web/index.html` | The page: canvases, thumb buttons, the title / settings / map / free play / briefing / count / pause / results / ending screens. |
+| `web/main.js` | The adventure (the map, briefings, saved progress), the loop, sound for each event, settings, adaptive quality. |
+| `web/sim.js` | Everything that happens. Pure, deterministic (seeded), no drawing. The bosses (`BOSS`), wingmates, hazards, and the computer pilot (`autopilot`). |
+| `web/terrain.js` | The ground for whichever level is loaded: `setLevel(def)`, then `height(x, z)`, the rail's line, obstacles. Shared by the sim and the renderer. |
+| `web/scenery.js` | Each level's world drawn: sky (day / storm / space), ground meshes, sea, stream, rocks / ice / trees / asteroids / yarn / the Moon, the ringed or home planet. |
+| `web/models.js` | Every model: Teddy's ship and each wingmate's (their colours, their head in the cockpit), the Hiss, the Alley Cats, every boss and boss part, pickups, cages, Mittens' planets. |
+| `web/world.js` | three.js: loads a level's scenery, draws the entities and effects, lightning, catnip, weather, the camera. |
+| `web/hud.js` | The 2D overlay: reticle and charge, markers and edge arrows, radar, shield/boost/bombs, wingmates' health, the boss bar, the Moon's clock, warnings, and the radio with portraits drawn from the cast. |
+| `web/input.js` | Tilt (the phone's whole orientation from the centred grip), thumb buttons, swipes, keyboard, a drag stick without a sensor. |
 | `web/sound.js` | Night Watch's sound module, plus a whoosh and an engine rumble. |
 | `web/lib/` | three.js r170 and its bloom passes, copied from Night Watch. |
-| `web/music/` | Rendered by `tools/music.py`: four pieces (title, Red Canyon, Open Sky, the Brute) and two cues (victory, boss warning), plus a few short cues still borrowed from Night Watch (count, wave, clear, pickup, game over). |
-| `tools/music.py`, `tools/samples.py` | The music, written as notes and rendered from FluidR3 recordings. The engine is Night Watch's; the pieces are Dogfight's own. `samples.py` downloads the recordings to `tools/samples/` (63 MB, not committed) first. |
-| `DESIGN.md` | Where the game goes next: story, cast (the family's pets), levels, multiplayer. |
+| `web/music/` | Rendered by `tools/music.py`: eight pieces and two cues of Dogfight's own; a few short cues (count, wave, clear, pickup, game over) still borrowed from Night Watch. |
+| `tools/music.py`, `tools/samples.py` | The music, written as notes and rendered from FluidR3 recordings (the engine is Night Watch's). `samples.py` downloads the recordings to `tools/samples/` (about 70 MB, not committed) first. |
+| `DESIGN.md` | The design: story, cast, levels, multiplayer. |
 | `simcheck.mjs`, `playcheck.mjs` | The checks. |
 | `tools/serve.mjs` | A plain file server for the checks and for playing on a laptop. |
 
 **Borrowed from Night Watch:** the particle system, beams, glow textures,
-the enemy ship models (dart, raider, the bomber as the Brute, torpedo,
-turret — with cat ears added), the planet and ring shaders, the
-deviceorientation-to-quaternion maths, the sound module and music.
+the Hiss's basic ships (dart, raider, the Brute's body, torpedo, turret —
+with cat ears added), the planet and ring shaders, the
+deviceorientation-to-quaternion maths, the sound module, some cues, and
+the music engine.
+
+## Putting the pets in
+
+Everything about a pet is in `web/cast.js`: `wing1`, `wing2`, `wing3` are
+the three wingmates (placeholders Biscuit, Pepper and Ziggy), `rosie` is
+mission control, `hops` the mechanic, `mittens` the villain (a family cat,
+ideally). Change `name`, `kind` ('dog' / 'cat' / 'rabbit'), `fur`, `patch`,
+`muzzle`, `ears` ('floppy' / 'pointy' / 'round'), `eyes`, the `ship`
+colours, and their `lines`. A `photo` (a file put in `web/cast/`, e.g.
+`'cast/biscuit.jpg'`) replaces their drawn portrait on the radio. Names in
+the story (`levels.js`) are written as `{wing1}`, `{teddy}` and so on and
+filled in from the cast, so renaming is one edit. The 3D head in the
+cockpit and the ship's paint follow the colours and ears.
 
 ## Playing it
 
-- Phone: open the page, pick options, **FLY!** iOS asks for motion access
-  on that tap. Then a three-second count while you hold the phone however
-  is comfortable: that grip becomes "straight and level". **CENTRE** (top)
-  re-takes it at any time.
-- Laptop: the keys are listed under the controls below.
-  No sensor: a thumb dragged on the left half of the screen is a stick.
-- URL options: `?start=arena` (skip the canyon), `?skill=pup|good|top`, `?pace=1.5`,
-  `?style=level|full`, `?auto=1` (the computer flies), `?low=1`, `?seed=N`.
+- Phone: open the page. **ADVENTURE** opens the route map: tap a glowing
+  planet, **FLY THERE**, listen to the briefing (or skip it), then hold
+  the phone the way that's comfortable for the three-second count: that
+  grip becomes "straight and level". **CENTRE** (top) re-takes it any time.
+  Progress is saved on the phone. **Free play** flies any planet, with the
+  wingmates you'd have by then. **Settings**: difficulty, clearing style,
+  speed, tilt.
+- Laptop: the keys are under the controls below. No sensor: a thumb
+  dragged on the left half of the screen is a stick.
+- URL options: `?level=ID` (straight to a planet's briefing; ids in
+  levels.js), `?start=arena` (near the end of the rail), `?skill=pup|good|top`,
+  `?pace=1.5`, `?style=level|full`, `?auto=1` (the computer flies),
+  `?low=1`, `?seed=N`.
 
 ## The controls (`input.js`)
 
@@ -139,52 +163,80 @@ happen again). In the canyon a spire knocks you sideways, an arch down.
 enemy within 6.3° / 4.3° / 2.6° of the nose (Pup / Good Boy / Top Dog),
 leading it. Three bombs; the blue capsule gives two.
 
-## The level
+## The adventure (`levels.js`)
 
-Red Canyon, 3700 m (about a minute), then the clearing. Teddy's base
-(Rosie the corgi) and Teddy talk on the radio as it goes.
+Ten planets; a playthrough flies seven. After each, the map offers the
+next (the second of each pair is marked HARD):
 
-| u (m) | What |
-|---|---|
-| 330 | three darts head-on |
-| 560 | two turrets, a repair bone at 760 |
-| 800-960 | three spires to weave through |
-| 1000 | three darts swoop in from behind and sit ahead, shooting |
-| 1250 | an arch, with the tennis ball (twin lasers) under it |
-| 1360 | three turrets and two darts |
-| 1600 | two raiders cross the canyon |
-| 1750-2250 | the narrows (16 m narrower), three spires, a golden bone |
-| 2150 | five darts head-on |
-| 2420, 2520 | two arches |
-| 2550 | four turrets, bombs at 2850, a golden bone up high |
-| 2950 | four darts swoop |
-| 3150-3700 | a repair bone, the canyon opens, the last golden bone |
-| clearing | wave 1: five darts; wave 2: three darts and two raiders; wave 3: the **Brute** (two engine pods shield its core; launches torpedoes and fans of bolts) with two darts |
+```
+Red Canyon -> Tidewater | Thunder Peaks -> The Kennel | Frost Fang
+           -> Catnip Jungle | Yarn Nebula -> Moonfall -> Scratchpost -> Mittens' Lair
+```
+
+| # | Planet | Ground | What's new | Boss |
+|---|---|---|---|---|
+| 1 | Red Canyon | canyon | the basics | **The Brute**: two engine pods shield its core; torpedoes, bolt fans |
+| 2 | Tidewater | ocean | low over the sea, turrets on sea stacks; Pepper joins | **The Big Tabby**: a carrier; four deck guns, then the bridge; launches fighters |
+| 2 | Thunder Peaks (hard) | canyon, tall | lightning rings on the rail; Pepper joins | **The Storm Tower**: three lightning rods; strikes where you'll be |
+| 3 | The Kennel | space | asteroids; shoot open cages to rescue pups; Ziggy is in one | **The Warden**: four locks spinning round it |
+| 3 | Frost Fang (hard) | canyon, ice | ice spikes and arches; Ziggy found | **The Snowball**: four vents; fans of ice shards |
+| 4 | Catnip Jungle | canyon, jungle | trees; catnip clouds turn your controls backwards | **Queen Nip**: five petals; puffs catnip at you |
+| 4 | Yarn Nebula (hard) | space | yarn balls; the Alley Cats taunt you | **The Alley Cats**: four aces, no shields, tougher and better shots |
+| 5 | Moonfall | space | two aces in the debris; a 150 s clock | **The Moon Engines**: four rockets on the Moon; the Moon falls if the clock runs out |
+| 6 | Scratchpost (hard) | trench | a trench of wall guns and beams; two aces | **The Fortress Core**, met on the rail (it stops): four spinning panels |
+| 7 | Mittens' Lair | space | a field of junk; aces | **Emperor Mittens**: two paws swat when you're close, planets batted at you; then the face breaks and she flees in a tiny ship: catch her |
+
+Then the epilogue: she's in an escape pod that Ziggy reprogrammed to fly
+her to the vet.
+
+A level is: the rail (`path`, `width`, `rim`, `railEnd`), the obstacles
+(`lay.spire`, `lay.arch`, `lay.rock` ...), a `theme` (palette, sky, fog,
+weather flags), the `script` (calls at each u: `formation`, `swoop`,
+`cross`, `turret`, `turretOn`, `pickup`, `cloud`, `storm`, `join`, `aces`,
+`say`), `waves` for the clearing (`spawn`, `say`, `help`, `cages`,
+`rescue`), the `boss`, `briefing`, `outro`, `next`. Red Canyon's original
+script is unchanged, just moved there.
+
+**Wingmates** fly with you: in formation beside and ahead of you on the
+rail (taking potshots), dogfighting in the clearings. One wave per level
+sends a cat after one of them ("Teddy! There's a cat on my tail!"):
+shoot it and they say thanks, and a few seconds later bring a bomb. Shot
+down, they go home for a nap and sit out the next level. Your shots can hit
+them, and they'll mention it. Bones heal them too. Biscuit is there from
+the start; Pepper joins on planet 2; Ziggy on planet 3.
+
+**Bosses** (`BOSS` in `sim.js`) are a body and parts. The parts are
+ordinary enemies placed round the body each step (they can spin with it);
+while any is left the body is shielded. Shots test unshielded things first,
+so a part tucked against a shielded body is still hittable — the Storm
+Tower's rods were unbeatable until this. Attacks: fans of bolts, the
+Brute's torpedoes, launched fighters, lightning strikes, catnip puffs,
+batted planets, swatting paws, the carrier's and the Moon's guns.
+
+**Hazards**: lightning (a glowing column marks where it'll hit in 1.3 s; 8
+damage), catnip clouds (3.5 s of backwards controls), Mittens' planets (10
+damage, shootable).
 
 **Enemies in the clearing** fly a real dogfight: chase with lead, overshoot
-inside 85 m and extend away for 3-4.5 s, jink when you sit on their tail,
-fire 2-round bursts when you are within 14° of their nose. They avoid the
-ground, the buttes and the edge. Raiders set up 480 m out, then make
-strafing runs with 4-round bursts. Torpedoes home slowly (42 m/s, 0.62
-rad/s) for 9 s, 10 damage; shoot them.
+inside 85 m and extend away, jink when you sit on their tail, fire bursts
+when you're near their nose. Some go after the wingmates instead of you.
+Aces are faster, tougher and better shots. They avoid the ground, the rocks
+and the edge.
 
 **Difficulty** (`SKILLS` in `sim.js`): enemy fire interval ×1.8 / ×1 /
 ×0.65, damage ×0.6 / ×1 / ×1.35, aim spread 0.07 / 0.035 / 0.014,
 enemy toughness ×0.8 / ×1 / ×1.25, dogfighter speed and turn ×0.8 / ×1 /
 ×1.15.
 
-**What simcheck says today** (five seeds each; the computer taps about
-six times a second, like a person, and charges shots at raiders and the
-Brute). At Good Boy, a sharp pilot wins 5/5 in level and 4/5 in full 3D at
-1×, 5/5 at the default 1.25×, and 4/5 at 1.5×. A sloppy pilot wins Pup 5/5
-and Good Boy 4/5. A sharp pilot loses Top Dog 5/5. The Brute went from 40
-to 30 (pods 14 to 11) when holding FIRE stopped being automatic fire; its
-torpedoes now do 8 and its bolt fans come every 3 s. The computer pilot
-used to fly into the buttes chasing the Brute (19 crashes in one fight),
-which made Good Boy look harder than it is. It now looks 0.5-2.3 s ahead
-and goes round. simcheck also flies each move (the rail loop, and the loop
-and U-turn in both styles), the charge and lock, and a barrel roll
-deflecting a bolt.
+**What simcheck says today** (three games per planet, 1.25×, the computer
+tapping about six times a second like a person): a sharp pilot wins every
+planet on Good Boy (at least 2 of 3, mostly 3 of 3); a sloppy one wins
+every planet on Pup. On Top Dog a sharp pilot wins 2 of 9 (canyon,
+thunder, lair). Full 3D wins 9 of 9. Things found and fixed on the way:
+the pilot circled still bosses too tightly to aim (it now flies out and
+comes back on a run), chased Mittens' planets for minutes, dodged
+lightning so hard it never fired; the Scratchpost boss restarted after
+being beaten; shots aimed at a part were stopped by its shielded body.
 
 ## Speed
 
@@ -200,19 +252,33 @@ in; once it feels right it can become the game's own speed and go away.
 
 Original pieces in the manner of a 90s console space shooter: a rock kit
 (synthesised kick, snare and hats), a synth bass jumping octaves in
-eighths, synth brass stabs, and trumpets and horns on big leaping tunes,
-with the flattened sixth and seventh chords that make it sound heroic.
-**Title** (C, 126 bpm, a march), **Red Canyon** (D, 152), **Open Sky** for
-the clearing (E minor, 156), **The Brute** (E phrygian, 162), a mission-
-complete fanfare and a boss warning. Nothing is copied from any game, only
-the style. Levels were balanced by measuring each instrument alone against
-the whole mix: the band about 8 dB under the tune, hats about 18 dB under.
-Re-render with `python3 tools/samples.py` (once) then `python3
-tools/music.py [name ...]`.
+eighths, synth brass stabs, trumpets and horns on big leaping tunes, with
+the flattened sixth and seventh chords that make it sound heroic. Nothing
+is copied from any game, only the style.
+
+| Piece | Where | |
+|---|---|---|
+| Dogfight | title, map, briefings | C, 126 bpm, a march |
+| Red Canyon | land rails | D, 152 |
+| Among the Rocks | space rails | A minor, 146, a synth arpeggio under brass |
+| Open Sky | clearings | E minor, 156 |
+| The Brute | bosses | E phrygian, 162 |
+| Alley Cats | the aces | F minor swing, 168: walking bass, vibes, muted trumpet and sax |
+| Emperor Mittens | the final boss | D minor waltz, 176: harpsichord, organ, choir |
+| Good Dogs | the ending | the title tune, slow and grand |
+
+A level picks its pieces with `music: {rail, free, boss}`. Balanced by
+rendering each instrument alone against the whole mix: the band about
+8 dB under the tune, hats about 18 dB under. Re-render with `python3
+tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
 
 ## Drawing it (`world.js`)
 
-- **The ground** is `height()` sampled into meshes: the canyon as 150 m
+- **Each level** is built by `scenery.js` when it loads, and the last one
+  thrown away. Ground kinds: canyon, trench, ocean (a wave shader over a
+  sea floor with islands), space (none: stars and nebula, asteroids, the
+  Moon, yarn balls, station modules, floating mugs).
+- **The ground** is `height()` sampled into meshes: the rail as 150 m
   strips that follow the rail, sampled finely across the walls (2.5-3 m)
   and coarsely on the floor and the plateau; the clearing as one 190×190
   grid. Vertex colours: rock strata by height, sand and scrub where it is
@@ -224,7 +290,11 @@ tools/music.py [name ...]`.
 - **Teddy's ship**: black hull, white nose and blaze, tan trim, a red
   collar band with a gold tag, wings whose tips droop like his ears, twin
   white fins, cyan engines. Teddy sits in the cockpit (a lumpy black head,
-  floppy ears, tan eyebrows and cheeks, white blaze, tongue out).
+  floppy ears, tan eyebrows and cheeks, white blaze, tongue out). Each
+  wingmate flies the same airframe in their own `ship` colours, with their
+  own head in the cockpit; pointy-eared pets get wing tips that stand up.
+- **Weather**: rain and lightning (Thunder Peaks), snow (Frost Fang),
+  spores (Catnip Jungle).
 - A blob shadow under the ship (depth), dust when flying low, engine
   trails, speed specks in the air, a wider view on boost.
 - **The camera** (rewritten 2026-11-08 after "a noticeable jump" in rolls
@@ -245,18 +315,17 @@ tools/music.py [name ...]`.
 
 ## Not built yet / open questions
 
-- **The question this prototype is for**: does tilt flying feel good on a
-  real phone, and which clearing style is better, level horizon or full
-  3D? Nothing here has been flown on a phone yet. Tuning to try first:
-  the tilt ranges (22° and 20°), the curve, the rail's sideways speed.
+- **Nothing has been flown on a real phone** past the first two versions.
+  Tilt ranges (20° turn, 20° nose, 32° roll) and the speed are the first
+  things to tune by hand.
+- **The pets**: placeholders until `cast.js` is filled in.
+- **Balance by hand**: the checks prove every level can be won, not that
+  each is fun. Scratchpost and Moonfall look easy for the computer.
 - **Loops on the rail through arches**: you can loop into the rock.
-  Maybe the loop should refuse (or shrink) when there is no room.
 - **The target camera** (TARGET) only aims the chase camera between you
-  and the target; a proper lock-on view is still to do.
-- One level. More worlds (ocean, space, a capital ship's trench) would use
-  the same `height()` + obstacles + script approach.
-- Wingmen, co-op (other phones as wingmen, a TV view, like the other games).
-- Hidden routes, medals, a score table.
-- Music is borrowed from Night Watch; Dogfight should get its own themes.
+  and the target.
+- **Co-op and versus** (see DESIGN.md), a score table, medals, upgrades
+  between missions (Professor Hops is in the cast for it).
+- A few cues (count, wave, clear, pickup, game over) are still Night Watch's.
 - Icons and a link preview image (`tools/art.mjs` in Night Watch is the
   pattern).

@@ -17,7 +17,7 @@ INSTRUMENTS = ['french_horn', 'trumpet', 'trombone', 'tuba', 'string_ensemble_1'
                'contrabass', 'cello', 'timpani', 'taiko_drum', 'orchestral_harp', 'celesta', 'glockenspiel',
                'flute', 'choir_aahs', 'acoustic_grand_piano', 'orchestra_hit', 'reverse_cymbal', 'tremolo_strings',
                'brass_section', 'church_organ', 'xylophone', 'harpsichord', 'bassoon', 'oboe', 'tubular_bells', 'music_box',
-               'synth_brass_1', 'synth_bass_1', 'synth_strings_1', 'lead_2_sawtooth', 'electric_bass_finger']
+               'synth_brass_1', 'synth_bass_1', 'synth_strings_1', 'lead_2_sawtooth', 'electric_bass_finger', 'alto_sax', 'muted_trumpet', 'vibraphone']
 NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
 
 

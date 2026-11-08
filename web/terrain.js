@@ -1,23 +1,35 @@
-/* Dogfight - the ground. Pure: no drawing, no randomness at run time.
+/* Dogfight - the ground, for whichever level is loaded. Pure: no drawing.
 
-   One function, height(x, z), is the whole landscape. The simulation asks it
-   whether a ship has hit the ground; world.js builds its meshes from it. So
-   what you see is what you crash into.
+   setLevel(def) loads a level from levels.js. After that, height(x, z) is
+   the whole landscape: the simulation asks it whether a ship has hit the
+   ground, and world.js builds its meshes from it. What you see is what you
+   crash into.
 
-   The level runs along -z. The canyon's centre line is cx(u), where u = -z
-   is how far along the rail you are. The canyon cuts through a ring of
-   mountains into a wide basin (the clearing) centred at ARENA, where the
-   rail lets go and the fight is free.
+   Every level runs along -z. The rail's centre line is cx(u), where u = -z
+   is how far along it you are. The rail runs to RAIL_END, where it lets go
+   in a clearing (an arena) centred at ARENA, or, in a level whose boss is
+   met on the rail, it stops there.
 
-   Spires and arches are not in the height field: they are too steep for its
-   grid. They are listed in OBSTACLES and tested separately (hitObstacle). */
+   The kinds of ground:
+     canyon - a canyon cut through a plateau, opening into a basin ringed by
+              mountains (Red Canyon, Thunder Peaks, Frost Fang, Catnip Jungle)
+     trench - straight-sided metal walls (Scratchpost)
+     ocean  - sea with islands; the water is the floor (Tidewater)
+     space  - nothing at all (the space levels)
+   Spires, arches, rocks and the like are not in the height field (too steep
+   for its grid): they are in OBSTACLES, tested by hitObstacle.
 
-export const CANYON_END = 3700;        // u where the rail lets go
-export const ARENA_U = 4250;           // the clearing's centre, along the rail
-export const ARENA_R = 560;            // radius of the flat floor
-export const ARENA_LIMIT = 820;        // past this, the ship is turned back
-export const CEILING = 460;
-export const RAIL_TOP = 58, RAIL_FLOOR = 6, WALL_MARGIN = 13;
+   The exports below are `let`: modules that import them see the current
+   level's values. */
+
+export let L = null;                  // the level's definition
+export let RAIL_END = 3700, ARENA_U = 4250, ARENA_R = 560, ARENA_LIMIT = 820;
+export let CEILING = 460, FLOOR = -1e9;
+export let RAIL_TOP = 58, RAIL_FLOOR = 6, WALL_MARGIN = 13;
+export let ARENA = {x: 0, z: -4250};
+export let OBSTACLES = [];
+export let GROUND = 'canyon';
+export const NONE = -1e9;
 
 /* ---------- noise ---------- */
 function hash2(ix, iz){
@@ -38,110 +50,142 @@ export function fbm(x, z, oct){
   for(let i = 0; i < (oct || 4); i++){ s += a * vnoise(x, z); x = x * 2.03 + 17.1; z = z * 2.03 + 9.7; a *= 0.5; }
   return s;
 }
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-
-/* ---------- the canyon's line ---------- */
-export function cx(u){ return 70 * Math.sin(u / 420) + 34 * Math.sin(u / 170 + 1.3) + 12 * Math.sin(u / 73 + 0.4); }
-export function dcx(u){ return 70 / 420 * Math.cos(u / 420) + 34 / 170 * Math.cos(u / 170 + 1.3) + 12 / 73 * Math.cos(u / 73 + 0.4); }
-/* Half the canyon floor's width. Narrow stretches are the thrilling ones. */
-export function halfW(u){
-  let w = 50 + 12 * Math.sin(u / 260 + 0.5);
-  w -= 16 * smooth(1750, 1850, u) * (1 - smooth(2150, 2250, u));   // the narrows
-  w += 30 * smooth(3300, 3650, u);                                  // opening into the clearing
-  return w;
+export const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+/* A seeded random number generator, for laying out a level the same way every time. */
+export function rng(seed){
+  let a = seed >>> 0;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-export function rimH(u){ return 88 + 14 * Math.sin(u / 600) + 20 * smooth(3200, 3600, u); }
 
-/* Where the rail is at u: the point on the canyon floor's centre line, the
-   way along (t) and the way to the right (r), both level. */
+/* ---------- the rail's line ---------- */
+let PA = [70, 34, 12], PL = [420, 170, 73], PP = [0, 1.3, 0.4];
+export function cx(u){ let x = 0; for(let i = 0; i < PA.length; i++) x += PA[i] * Math.sin(u / PL[i] + PP[i]); return x; }
+export function dcx(u){ let d = 0; for(let i = 0; i < PA.length; i++) d += PA[i] / PL[i] * Math.cos(u / PL[i] + PP[i]); return d; }
+/* Half the rail corridor's width (the canyon floor, the trench, the gap through the rocks). */
+export function halfW(u){ return L.width(u); }
+/* The canyon's rim height (canyon and trench levels). */
+export function rimH(u){ return L.rim ? L.rim(u) : 90; }
+
 export function railFrame(u){
   const d = dcx(u), l = Math.hypot(d, 1);
-  // position (cx(u), 0, -u); d/du = (dcx, 0, -1)
   return {x: cx(u), z: -u, tx: d / l, tz: -1 / l, rx: 1 / l, rz: d / l};
 }
-
-export const ARENA = {x: cx(ARENA_U), z: -ARENA_U};
+/* A point in the rail's frame: u along, ox to the right, at height y. */
+export function railPoint(u, ox, y){ const f = railFrame(u); return {x: f.x + f.rx * ox, y, z: f.z + f.rz * ox}; }
+/* Sideways offset of a world point from the rail's line at u. */
+export function lateralAt(u, x, z){ const f = railFrame(u); return (x - f.x) * f.rx + (z - f.z) * f.rz; }
 
 /* ---------- height ---------- */
 function canyonH(x, z){
-  const u = -z;
-  if(u > ARENA_U - 150) return 1e9;
+  const u = -z, G = L.groundParams || {};
+  if(u > ARENA_U - 150 && L.arena !== false) return 1e9;
   const c = cx(u), sl = Math.hypot(dcx(u), 1);
-  // craggy walls: the distance from the centre line is pushed about by noise
   let d = Math.abs(x - c) / sl;
-  d += (fbm(x * 0.018, z * 0.018, 3) - 0.5) * 14 + (vnoise(x * 0.09, z * 0.09) - 0.5) * 5;
+  const crag = G.crag == null ? 1 : G.crag;
+  d += ((fbm(x * 0.018, z * 0.018, 3) - 0.5) * 14 + (vnoise(x * 0.09, z * 0.09) - 0.5) * 5) * crag;
   const w = halfW(u), H = rimH(u);
   if(d < w){
-    let y = (fbm(x * 0.03, z * 0.03, 3) - 0.5) * 3;            // dunes
-    y -= 3.5 * (1 - smooth(4, 14, d));                         // the stream bed
-    y += 5 * smooth(w - 16, w, d);                             // scree at the foot of the walls
+    let y = (fbm(x * 0.03, z * 0.03, 3) - 0.5) * 3 * (G.dunes == null ? 1 : G.dunes);
+    if(G.stream !== false) y -= 3.5 * (1 - smooth(4, 14, d));
+    y += 5 * smooth(w - 16, w, d) * crag;
     return y;
   }
-  const k = Math.min(1, (d - w) / 28);
+  const wall = G.wall || 28, steps = G.steps || 4;
+  const k = Math.min(1, (d - w) / wall);
   const s = k * k * (3 - 2 * k);
-  const st = s * 4;
-  const terr = (Math.floor(st) + smooth(0.2, 0.8, st - Math.floor(st))) / 4;   // strata ledges
+  const st = s * steps;
+  const terr = (Math.floor(st) + smooth(0.2, 0.8, st - Math.floor(st))) / steps;
   let y = 5 + (H - 5) * Math.min(1, terr);
-  y += (fbm(x * 0.012 + 3, z * 0.012, 4) - 0.5) * 22 * k;     // the plateau rolls
+  y += (fbm(x * 0.012 + 3, z * 0.012, 4) - 0.5) * (G.roll == null ? 22 : G.roll) * k;
   return y;
 }
-
 function basinH(x, z){
+  const G = L.groundParams || {};
   const dx = x - ARENA.x, dz = z - ARENA.z, r = Math.hypot(dx, dz);
   let y = (fbm(x * 0.008, z * 0.008, 4) - 0.45) * 16 + (fbm(x * 0.03, z * 0.03, 2) - 0.5) * 3;
   const m = smooth(ARENA_R, ARENA_R + 240, r);
   if(m > 0){
     const ridge = 1 - Math.abs(fbm(x * 0.004 + 7, z * 0.004, 4) * 2 - 1);
-    y += m * (150 + 140 * ridge + (fbm(x * 0.02, z * 0.02, 3) - 0.5) * 50);
+    const M = G.mountains || 150;
+    y += m * (M + M * 0.93 * ridge + (fbm(x * 0.02, z * 0.02, 3) - 0.5) * 50);
   }
   return y;
 }
-
-export function height(x, z){
-  return Math.min(canyonH(x, z), basinH(x, z));
+/* The trench: sheer walls with a ledge or two, opening into a chamber at the end. */
+function trenchH(x, z){
+  const u = -z, c = cx(u);
+  if(L.railBossU && u > L.railBossU + 330) return rimH(u);     // the chamber's far wall
+  const d = Math.abs(x - c), w = halfW(u), H = rimH(u);
+  if(d < w) return 0;
+  if(d < w + 3) return H * 0.45;
+  if(d < w + 14) return H * 0.45 + (d > w + 9 ? H * 0.55 : 0);
+  return H + Math.floor(vnoise(x * 0.02, z * 0.02) * 4) * 8;
 }
-
-/* The ground's slope, for lighting and for bouncing off it. */
+/* The sea: islands where the noise rises above the waves, none in the rail's way. */
+function oceanH(x, z){
+  const u = -z;
+  let y = (fbm(x * 0.004 + 11, z * 0.004, 4) - 0.6) * 260 + (fbm(x * 0.03, z * 0.03, 2) - 0.5) * 12;
+  // keep the rail's corridor and the clearing's middle open sea
+  if(u < ARENA_U - 300){
+    const d = Math.abs(lateralAt(u, x, z));
+    y -= 120 * (1 - smooth(halfW(u) + 20, halfW(u) + 120, d));
+  }
+  const ra = Math.hypot(x - ARENA.x, z - ARENA.z);
+  y -= 140 * (1 - smooth(ARENA_R * 0.5, ARENA_R, ra));
+  y += smooth(ARENA_R + 100, ARENA_R + 400, ra) * 60;
+  return Math.max(y, -30);
+}
+/* The ground itself, wherever it is (below the waves too). */
+export function groundAt(x, z){
+  if(GROUND === 'space') return NONE;
+  if(GROUND === 'ocean') return oceanH(x, z);
+  if(GROUND === 'trench') return trenchH(x, z);
+  return L.arena === false ? canyonH(x, z) : Math.min(canyonH(x, z), basinH(x, z));
+}
+/* What a ship hits: the ground, or the water. */
+export function height(x, z){
+  const g = groundAt(x, z);
+  return GROUND === 'ocean' ? Math.max(g, 0) : g;
+}
 export function normalAt(x, z){
+  if(GROUND === 'space') return [0, 1, 0];
   const e = 1.5;
   const hx = height(x + e, z) - height(x - e, z), hz = height(x, z + e) - height(x, z - e);
   const l = Math.hypot(hx, 2 * e, hz);
   return [-hx / l, 2 * e / l, -hz / l];
 }
 
-/* ---------- spires and arches ----------
-   A spire is a rock column: x, z, radius at the foot, height.
-   An arch is a stone bridge across the canyon at u: its underside is at y
-   at the walls and higher in the middle. Fly under it. */
-function lateral(u, off){ const f = railFrame(u); return {x: f.x + f.rx * off, z: f.z + f.rz * off}; }
-function spireAt(u, off, r, h){ const p = lateral(u, off); return {type: 'spire', x: p.x, z: p.z, r, h, u}; }
-export const OBSTACLES = [
-  spireAt(800, -18, 7, 70), spireAt(880, 16, 7, 80), spireAt(960, -10, 8, 65),
-  {type: 'arch', u: 1250, y: 34, thick: 14},
-  spireAt(1900, 12, 6, 60), spireAt(1990, -9, 6, 72), spireAt(2080, 8, 6, 66),
-  {type: 'arch', u: 2420, y: 30, thick: 12},
-  {type: 'arch', u: 2520, y: 38, thick: 16},
-  spireAt(3000, 0, 9, 75),
-  // buttes in the clearing: cover to fight round
-  ...[[0.45, 140, 38, 150], [2.2, 330, 46, 190], [3.7, 250, 32, 120], [5.2, 380, 52, 210], [1.2, 420, 30, 135]].map(([a, r, rad, h]) =>
-    ({type: 'spire', x: ARENA.x + Math.cos(a) * r, z: ARENA.z + Math.sin(a) * r, r: rad, h, u: ARENA_U})),
-];
-for(const o of OBSTACLES) if(o.type === 'arch') Object.assign(o, railFrame(o.u), {w: halfW(o.u)});
-
-/* The arch's underside at a sideways offset from the centre line. */
+/* ---------- obstacles ----------
+   spire  - a rock column (or a tree, an ice spike, a sea stack): x, z, foot radius r, height h
+   arch   - a stone bridge across the rail at u, underside y at the walls (higher in the middle)
+   rock   - a sphere: an asteroid, a yarn ball, a station module, the moon: x, y, z, r
+   They are kept in buckets along z, so a test only looks at the nearby few. */
+const BUCKET = 120;
+let buckets = new Map();
+function bucketKeys(o){
+  let z0, z1;
+  if(o.type === 'arch'){ z0 = o.z - 60; z1 = o.z + 60; }
+  else { const r = o.type === 'rock' ? o.r : o.r * 1.2 + 5; z0 = o.z - r; z1 = o.z + r; }
+  const out = [];
+  for(let k = Math.floor(z0 / BUCKET); k <= Math.floor(z1 / BUCKET); k++) out.push(k);
+  return out;
+}
 export function archUnder(o, off){ const k = Math.min(1, Math.abs(off) / (o.w + 10)); return o.y + 14 * (1 - k * k); }
-/* Spires taper: the radius at a height. */
-export function spireR(o, y){ return o.r * (1.1 - 0.35 * Math.min(1, Math.max(0, y / o.h))); }
+export function spireR(o, y){ return o.r * (1.1 - 0.35 * Math.min(1, Math.max(0, (y - (o.y0 || 0)) / o.h))); }
+export function spireTop(o){ return (o.y0 || 0) + o.h; }
 
-/* Is a sphere of radius rad at (x,y,z) inside any obstacle? Returns it, or null. */
 export function hitObstacle(x, y, z, rad){
-  for(const o of OBSTACLES){
+  const list = buckets.get(Math.floor(z / BUCKET));
+  if(!list) return null;
+  for(const o of list){
     if(o.type === 'spire'){
-      if(y > o.h + rad) continue;
+      if(y > spireTop(o) + rad || y < (o.y0 || 0) - 20) continue;
       const dx = x - o.x, dz = z - o.z, rr = spireR(o, y) + rad;
       if(dx * dx + dz * dz < rr * rr) return o;
+    } else if(o.type === 'rock'){
+      const dx = x - o.x, dy = y - o.y, dz = z - o.z, rr = o.r + rad;
+      if(dx * dx + dy * dy + dz * dz < rr * rr) return o;
     } else {
-      // along and across the canyon at the arch
       const ax = x - o.x, az = z - o.z;
       const along = ax * o.tx + az * o.tz;
       if(Math.abs(along) > o.thick / 2 + rad) continue;
@@ -150,4 +194,37 @@ export function hitObstacle(x, y, z, rad){
     }
   }
   return null;
+}
+
+/* Helpers for levels.js to lay out obstacles with. */
+export const lay = {
+  spire(u, off, r, h, look){ const p = railPoint(u, off, 0); return {type: 'spire', x: p.x, z: p.z, r, h, u, look: look || 'rock'}; },
+  spireAt(x, z, r, h, look, y0){ return {type: 'spire', x, z, r, h, u: -z, look: look || 'rock', y0: y0 || 0}; },
+  arch(u, y, thick, look){ return {type: 'arch', u, y, thick, look: look || 'rock'}; },
+  rock(u, off, y, r, look){ const p = railPoint(u, off, y); return {type: 'rock', x: p.x, y, z: p.z, r, u, look: look || 'asteroid'}; },
+  rockAt(x, y, z, r, look){ return {type: 'rock', x, y, z, r, u: -z, look: look || 'asteroid'}; },
+};
+
+/* ---------- loading a level ---------- */
+export function setLevel(def){
+  L = def;
+  GROUND = def.ground || 'canyon';
+  const p = def.path || {};
+  PA = p.a || [70, 34, 12]; PL = p.l || [420, 170, 73]; PP = p.p || [0, 1.3, 0.4];
+  RAIL_END = def.railEnd || 3700;
+  ARENA_U = def.arenaU || RAIL_END + 550;
+  ARENA_R = def.arenaR || 560;
+  ARENA_LIMIT = def.arenaLimit || 820;
+  CEILING = def.ceiling || 460;
+  FLOOR = GROUND === 'space' ? (def.floor || -380) : NONE;
+  RAIL_TOP = def.railTop || 58;
+  RAIL_FLOOR = def.railFloor != null ? def.railFloor : 6;
+  WALL_MARGIN = def.wallMargin || 13;
+  ARENA = {x: cx(ARENA_U), z: -ARENA_U, y: def.arenaY || 0};
+  lay.arenaX = ARENA.x; lay.arenaZ = ARENA.z;
+  OBSTACLES = def.obstacles ? def.obstacles(lay, rng(def.seed || 1)) : [];
+  for(const o of OBSTACLES) if(o.type === 'arch') Object.assign(o, railFrame(o.u), {w: halfW(o.u)});
+  buckets = new Map();
+  for(const o of OBSTACLES) for(const k of bucketKeys(o)){ if(!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(o); }
+  return def;
 }
