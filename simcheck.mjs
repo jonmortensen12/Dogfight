@@ -181,6 +181,28 @@ for(const style of ['level', 'full']){
   for(let i = 0; i < 20; i++){ step(s, 1 / 60, {}); deflect += s.events.filter(e => e.k === 'deflect').length; s.events.length = 0; }
   ok(deflect === 1 && p.shield === sh, 'a barrel roll knocks an incoming bolt away');
 }
+{
+  // the combo: a charged shot into a strung-out pack sets them all off
+  const s = newSim({seed: 3, start: 'arena'});
+  let n = 0;
+  while(s.mode !== 'free' && n++ < 2000) step(s, 1 / 60, {});
+  s.enemies = []; s.wave = 9; s.waveT = -1; s.p.y = 200; s.p.pitch = 0;
+  step(s, 1 / 60, {});
+  const p = s.p, rx = -p.fz, rz = p.fx;      // the ship's right, flat
+  const dart = (id, side) => ({id, type: 'dart', x: p.x + p.fx * 300 + rx * side, y: p.y, z: p.z + p.fz * 300 + rz * side, fx: p.fx, fy: 0, fz: p.fz, r: 4.6, hp: 2, maxHp: 2, t: 0, fireT: 99, burst: 0, state: 'extend', extT: 99, goal: {x: p.x + p.fx * 4000, y: p.y, z: p.z + p.fz * 4000}, speed: 0.001, bank: 0, ph: 0, flash: 0});
+  // one in the middle, then a line out each side, 22 m apart: the far ones
+  // are beyond the first burst, so only the chain can reach them
+  s.enemies.push(dart(900, 0));
+  for(let i = 1; i <= 3; i++){ s.enemies.push(dart(900 + i, i * 22)); s.enemies.push(dart(910 + i, -i * 22)); }
+  for(let i = 0; i < 80; i++) step(s, 1 / 60, {fire: true});
+  const k0 = s.stats.kills;
+  step(s, 1 / 60, {});
+  let combo = 0;
+  for(let i = 0; i < 150; i++){ step(s, 1 / 60, {}); for(const e of s.events) if(e.k === 'combo') combo += e.n; s.events.length = 0; }
+  const left = s.enemies.filter(e => e.id >= 900 && e.hp > 0).length;
+  ok(left === 0, `a charged shot into a pack of 7 destroys them all, by chain reaction (${7 - left} down)`);
+  ok(combo === 6 && s.stats.kills - k0 === 13, `and scores a combo: +${combo} bonus hits (${s.stats.kills - k0} hits for 7 cats)`);
+}
 
 console.log('\nSame seed, same game');
 const a = run('jungle', 'good', 'level', 0.85, 5), b = run('jungle', 'good', 'level', 0.85, 5);

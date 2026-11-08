@@ -38,7 +38,7 @@ export {railPoint};
 export const SKILLS = {
   pup:  {name: 'Pup',      fire: 1.8, dmg: 0.6, spread: 0.07, assist: 0.11, hp: 0.8, ai: 0.8},
   good: {name: 'Good Boy', fire: 1.0, dmg: 1.0, spread: 0.035, assist: 0.075, hp: 1.0, ai: 1.0},
-  top:  {name: 'Top Dog',  fire: 0.65, dmg: 1.35, spread: 0.014, assist: 0.045, hp: 1.25, ai: 1.15},
+  top:  {name: 'Top Dog',  fire: 0.65, dmg: 1.45, spread: 0.014, assist: 0.04, hp: 1.4, ai: 1.15},
 };
 
 export const SPEED = {rail: 60, railBoost: 100, railBrake: 32, free: 62, freeBoost: 108, freeBrake: 34};
@@ -54,21 +54,25 @@ const SHOT_SPEED = 430, BOLT_SPEED = 125;
 const SHIP_R = 2.2;
 /* The charged shot: starts charging after holding FIRE this long, full after
    this much more; locks within this cone (radians); its hit and burst. */
-export const CHARGE = {start: 0.22, time: 0.75, cone: 0.21, dmg: 7, blast: 22};
+export const CHARGE = {start: 0.22, time: 0.75, cone: 0.21, dmg: 7, blast: 30};
+/* The combo: anything a charged burst destroys goes off too (CHAIN.blast m,
+   CHAIN.dmg), so a pack of fighters goes up together, and every kill past
+   the first in one chain is a bonus hit, as in the old rail shooters. */
+export const CHAIN = {blast: 24, dmg: 6};
 
 /* What every kind of enemy starts with. */
 const KINDS = {
-  dart: {hp: 2, r: 3.2, speed: 66},
-  raider: {hp: 5, r: 3.6, speed: 78},
-  ace: {hp: 14, r: 3.4, speed: 84},
-  turret: {hp: 3, r: 4.2, speed: 0},
-  torpedo: {hp: 1, r: 2.6, speed: 42},
+  dart: {hp: 2, r: 4.6, speed: 66},
+  raider: {hp: 5, r: 5, speed: 78},
+  ace: {hp: 14, r: 4.8, speed: 84},
+  turret: {hp: 3, r: 5, speed: 0},
+  torpedo: {hp: 1, r: 3.6, speed: 42},
   planet: {hp: 2, r: 8, speed: 46},
   cage: {hp: 2, r: 5, speed: 0},
   part: {hp: 8, r: 6, speed: 0},
-  mittensShip: {hp: 18, r: 4, speed: 86},
+  mittensShip: {hp: 18, r: 5, speed: 86},
   boss: {hp: 30, r: 14, speed: 0},
-  mine: {hp: 1, r: 3, speed: 0},
+  mine: {hp: 1, r: 4.2, speed: 0},
   buoy: {hp: 1, r: 5.5, speed: 0},
 };
 
@@ -713,8 +717,14 @@ export function step(s, dt, inp){
     }
   } else if(s.phase === 'arena'){
     const left = s.enemies.filter(e => e.wave === s.wave && e.type !== 'torpedo' && e.type !== 'planet' && e.type !== 'cage' && e.type !== 'mine').length;
+    if(s.waveT > 2.5 && !s.enemies.some(e => e.type === 'cage')) s.waveT = 2.5;   // all out: on with it
     if(s.waveT > 0){ s.waveT -= dt; if(s.waveT <= 0) nextWave(s); }
-    else if(s.wave > 0 && left === 0 && !s.bossKind){ s.waveT = 2.5; }
+    else if(s.wave > 0 && left === 0 && !s.bossKind){
+      // guards down but pups still caged: a little time to get them out first
+      const caged = s.enemies.some(e => e.type === 'cage');
+      s.waveT = caged ? 14 : 2.5;
+      if(caged) say(s, 'rosie', "Guards are down - quick, open those cages before the Warden gets here!", 2.6);
+    }
   }
   if(s.timer != null && s.phase !== 'won' && !p.dead){
     s.timer -= dt;
@@ -1495,13 +1505,45 @@ function projectiles(s, dt){
 }
 function blast(s, x, y, z, R, dmg, direct, kind){
   ev(s, kind === 'charge' ? 'burst' : 'bomb', {x, y, z, r: R});
-  if(direct) hurtEnemy(s, direct, dmg, x, y, z);
+  const charge = kind === 'charge';
+  // a charged burst hits everything inside it in full (it is a combo shot);
+  // a bomb falls off towards its edge
+  const hit = (e, n) => { const was = e.hp; hurtEnemy(s, e, n, e.x, e.y, e.z); return was > 0 && e.hp <= 0; };
+  const killed = [];
+  if(direct && hit(direct, dmg)) killed.push(direct);
   for(const e of s.enemies){
     if(e === direct || e.hp <= 0) continue;
     const d = len(e.x - x, e.y - y, e.z - z);
-    if(d < R + e.r) hurtEnemy(s, e, Math.ceil(dmg * (1 - d / (R + e.r)) + 1), e.x, e.y, e.z);
+    const full = charge && SMALL[e.type];
+    if(d < R + e.r && hit(e, full ? dmg : Math.ceil(dmg * (1 - d / (R + e.r)) + 1))) killed.push(e);
   }
   s.bolts = s.bolts.filter(b => len(b.x - x, b.y - y, b.z - z) > R);
+  if(charge) chain(s, killed, x, y, z);
+}
+/* The combo: what a charged burst destroys goes off in turn, and so on.
+   Only the small fry go off; boss parts take the burst's usual falloff. */
+const SMALL = {dart: 1, raider: 1, ace: 1, turret: 1, torpedo: 1, mine: 1, planet: 1};
+function chain(s, killed, x, y, z){
+  let n = killed.length;
+  const queue = killed.filter(e => SMALL[e.type]);
+  for(let i = 0; i < queue.length && i < 40; i++){
+    const c = queue[i];
+    ev(s, 'chain', {x: c.x, y: c.y, z: c.z, r: CHAIN.blast});
+    for(const e of s.enemies){
+      if(e.hp <= 0 || e.shielded) continue;
+      if(len(e.x - c.x, e.y - c.y, e.z - c.z) < CHAIN.blast + e.r){
+        const was = e.hp; hurtEnemy(s, e, CHAIN.dmg, e.x, e.y, e.z);
+        if(was > 0 && e.hp <= 0){ n++; if(SMALL[e.type]) queue.push(e); }
+      }
+    }
+    s.bolts = s.bolts.filter(b => len(b.x - c.x, b.y - c.y, b.z - c.z) > CHAIN.blast);
+  }
+  if(n >= 2){
+    const bonus = n - 1;
+    s.stats.kills += bonus; s.stats.combo = (s.stats.combo || 0) + bonus;
+    ev(s, 'combo', {n: bonus, x, y, z});
+    if(n >= 3) say(s, 'teddy', ['Woof! Got the whole pack!', 'Look at them all go!', 'Combo! Good boy, me!'][n % 3], 1.8);
+  }
 }
 
 function pickups(s, dt){
@@ -1640,6 +1682,7 @@ function freePilot(s, inp, skill){
     }
     if(e.type === 'part' || e.type === 'boss') d *= 0.7;
     if(e.hunt) d *= 0.5;   // a wingmate in trouble comes first
+    if(e.type === 'cage' && s.apSecret) d *= 0.6;   // looking for the secret: the pups
     if(d < bd){ bd = d; best = e; }
   }
   let d = {x: p.fx, y: 0, z: p.fz};

@@ -437,6 +437,7 @@ export function buildScenery(def, renderer){
   const th = def.theme || {};
   PAL = palette(th);
   GRAIN = GRAIN || grainTex();
+  GRAIN.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());   // sharp on the ground far ahead
   const group = new THREE.Group();
   const sunDir = new THREE.Vector3(...(th.sun || [-0.45, 0.42, -0.78])).normalize();
   const haze = new THREE.Color(...(th.haze || [0.5, 0.5, 0.6]));

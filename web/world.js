@@ -166,7 +166,9 @@ export class World {
     opts = opts || {};
     this.low = !!opts.low;
     const r = this.renderer = new THREE.WebGLRenderer({canvas, antialias: false, powerPreference: 'high-performance'});
-    this.pr = Math.min(opts.low ? 1 : 1.5, devicePixelRatio || 1);
+    // sharp: the screen's own pixels, up to 2x; the frame-rate watcher in
+    // main.js steps it down on a phone that can't keep up
+    this.pr = Math.min(opts.low ? 1 : 2, devicePixelRatio || 1);
     r.setPixelRatio(this.pr);
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.0;
     const scene = this.scene = new THREE.Scene();
@@ -221,6 +223,8 @@ export class World {
     this.nips = []; for(let i = 0; i < 60; i++){ const s = new THREE.Sprite(nipMats[i % 3]); s.visible = false; scene.add(s); this.nips.push(s); }
 
     // post: bloom on the bright parts
+    // (multisampling was tried for sharpness: it halved the frame rate, and a
+    // phone's own pixels at 2x are sharp enough without it)
     this.composer = new EffectComposer(r);
     this.composer.addPass(new RenderPass(scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.45, 0.92);
@@ -306,6 +310,12 @@ export class World {
         this.flash(e, hot(0xa0c8ff, 3), e.r * 2, 0.5);
         this.ring(e, hot(0x80b0ff, 2.5), e.r * 2.6, 0.7);
         this.shake = Math.max(this.shake, 0.8);
+      } else if(e.k === 'chain'){
+        // one link of a charged-shot combo going off
+        P.burst(e, 50, 40, hot(0x9affb0, 2.4), 3.2, 0.6, 2);
+        this.flash(e, hot(0xd0ffd8, 3), e.r * 1.4, 0.3);
+        this.ring(e, hot(0x70ff90, 2.5), e.r * 2, 0.45);
+        this.shake = Math.max(this.shake, 0.3);
       } else if(e.k === 'burst'){
         P.burst(e, 90, 45, hot(0x70ff90, 2.4), 4, 0.8, 2);
         this.flash(e, hot(0xb0ffc0, 3), e.r * 1.8, 0.35);
@@ -438,7 +448,7 @@ export class World {
       if(e.type === 'boss' && e.kind === 'carrier' && Math.random() < 0.6) this.parts.emit(e.x - e.fx * 46 + (Math.random() - 0.5) * 20, 1, e.z - e.fz * 46 + (Math.random() - 0.5) * 20, 0, 2, 0, 0.8, 0.85, 0.9, 6, 2.5, 0.5, 2);
       // their engines leave a little trail
       if(e.type === 'dart' || e.type === 'raider' || e.type === 'torpedo' || e.type === 'ace' || e.type === 'mittensShip'){
-        const back = e.type === 'torpedo' ? 0 : 3;
+        const back = e.type === 'torpedo' ? 0 : 7;
         this.parts.emit(e.x - e.fx * back, e.y - e.fy * back, e.z - e.fz * back, 0, 0, 0,
           e.type === 'torpedo' ? 1.6 : 1.4, e.type === 'torpedo' ? 0.3 : 0.6, 0.2, e.type === 'torpedo' ? 2.4 : 1.2, 0.4, 0, 0.4);
       }

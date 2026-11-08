@@ -189,7 +189,7 @@ export function buildEnemy(e, glow){
     add(new THREE.BoxGeometry(0.06, 0.05, 1.0), glowMat(eye, 3), -1.9, 0, -0.95, 0, -0.45);
     if(type === 'ace'){ const tail = add(new THREE.CylinderGeometry(0.08, 0.14, 2.2, 6), hull, 0, 0.6, -2.2, -1.0); void tail; }
     eng(type === 'ace' ? 0xffb030 : 0xff5a2a, 2.2, 0, 0, -1.8);
-    g.scale.setScalar(type === 'ace' ? 1.7 : 1.5);
+    g.scale.setScalar(type === 'ace' ? 3.4 : 3.2);
   } else if(type === 'raider'){
     const sh = new THREE.Shape();
     sh.moveTo(0, 2.4); sh.lineTo(2.1, -1.5); sh.lineTo(0.7, -1.0); sh.lineTo(0, -1.6); sh.lineTo(-0.7, -1.0); sh.lineTo(-2.1, -1.5); sh.closePath();
@@ -204,12 +204,13 @@ export function buildEnemy(e, glow){
     add(en, dark, 0.8, 0, -1.0, Math.PI / 2); add(en, dark, -0.8, 0, -1.0, Math.PI / 2);
     add(new THREE.BoxGeometry(3.4, 0.05, 0.08), glowMat(0xff8a00, 3), 0, 0.2, -1.2);
     eng(0xff8a20, 2.0, 0.8, 0, -1.8); eng(0xff8a20, 2.0, -0.8, 0, -1.8);
-    g.scale.setScalar(1.6);
+    g.scale.setScalar(3.2);
   } else if(type === 'torpedo'){
     add(new THREE.SphereGeometry(0.9, 16, 12), glowMat(0xff2060, 4));
     const spike = new THREE.ConeGeometry(0.22, 1.4, 5);
     for(let i = 0; i < 6; i++){ const a = i / 6 * Math.PI * 2; add(spike, dark, Math.cos(a) * 1.0, Math.sin(a) * 1.0, -0.3, 0, 0, a - Math.PI / 2); }
     g.userData.pulse = eng(0xff2060, 7, 0, 0, 0);
+    g.scale.setScalar(1.4);
   } else if(type === 'turret'){
     const head = new THREE.Group(); g.add(head); g.userData.head = head;
     add(new THREE.CylinderGeometry(3.4, 4.2, 3, 10), dark, 0, -2.5, 0);
@@ -219,6 +220,7 @@ export function buildEnemy(e, glow){
     ha(new THREE.BoxGeometry(0.45, 0.45, 4.2), dark, -0.7, 0.2, 2.2);
     ha(new THREE.SphereGeometry(0.6, 12, 10), glowMat(0xff2a1a, 4), 0, 0.6, 1.4);
     const sp = sprite(glow, 0xff3020, 2.6); sp.position.set(0, 0.6, 1.4); head.add(sp);
+    g.scale.setScalar(1.35);
   } else if(type === 'planet'){
     // one of the little worlds Mittens bats at you
     const hue = e.hue || 0.3;
@@ -246,12 +248,13 @@ export function buildEnemy(e, glow){
     add(new THREE.CylinderGeometry(0.6, 0.65, 0.35, 10, 1, true), gold, 0, 1.0, 0.6);
     add(new THREE.SphereGeometry(0.35, 10, 8), glowMat(0x7ad040, 4), 0, 0.4, 2.6);
     eng(0xd070ff, 4, 0, 0, -3.2);
-    g.scale.setScalar(1.6);
+    g.scale.setScalar(3.2);
   } else if(type === 'mine'){
     // a floating mine: a ball of spikes with a blinking light
     add(new THREE.SphereGeometry(2.2, 14, 10), dark);
     for(let i = 0; i < 10; i++){ const a = i * 2.4, b = Math.acos(1 - 2 * (i + 0.5) / 10); const sp = add(new THREE.ConeGeometry(0.5, 2, 6), hull, Math.sin(b) * Math.cos(a) * 2.4, Math.cos(b) * 2.4, Math.sin(b) * Math.sin(a) * 2.4); sp.lookAt(sp.position.clone().multiplyScalar(3)); sp.rotateX(Math.PI / 2); }
     g.userData.pulse = eng(0xff3030, 5, 0, 0, 0);
+    g.scale.setScalar(1.4);
   } else if(type === 'buoy'){
     // a Hiss radar buoy, bobbing: a float, a mast, a spinning dish, a blinking light
     add(new THREE.CylinderGeometry(2.6, 3.2, 3, 12), std(0xd84a2a, 0.3, 0.6), 0, -1, 0);

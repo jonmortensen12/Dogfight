@@ -195,6 +195,20 @@ export class Hud {
       const k = 0.15 + 0.15 * Math.sin(performance.now() / 150);
       g.strokeStyle = `rgba(255,40,30,${k})`; g.lineWidth = 14; g.strokeRect(0, 0, W, H);
     }
+    if(this.combo){
+      // a charged-shot combo: +N, rising and fading
+      const c = this.combo; c.t += dt;
+      if(c.t > 1.6) this.combo = null;
+      else {
+        g.globalAlpha = Math.min(1, (1.6 - c.t) * 2.5);
+        g.textAlign = 'center'; g.fillStyle = '#9affb0';
+        g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 8;
+        g.font = font(c.n >= 3 ? 30 : 24, 900);
+        g.fillText('+' + c.n, W / 2, H * 0.3 - c.t * 18);
+        g.font = font(12, 800); g.fillText('COMBO', W / 2, H * 0.3 - c.t * 18 + 18);
+        g.shadowBlur = 0; g.textAlign = 'left'; g.globalAlpha = 1;
+      }
+    }
     if(this.deflectT > 0){
       this.deflectT -= dt;
       g.globalAlpha = Math.min(1, this.deflectT * 3);
@@ -356,18 +370,14 @@ export class Hud {
       const on = !q.behind && q.x > 20 && q.x < W - 20 && q.y > 20 && q.y < H - 20;
       const col = e.type === 'cage' ? '#fff0a0' : e.type === 'torpedo' || e.type === 'planet' ? '#ff4080' : e.type === 'boss' || e.type === 'part' ? (e.shielded ? '#7a5a9a' : '#d070ff') : e.type === 'ace' ? '#ffb030' : '#ff6a4a';
       if(on){
+        // no box round every enemy (Jon: "very non-starfoxy") - they're big
+        // enough to see. Only the ones that need a word get one: torpedoes,
+        // pups, planets, named aces, a cat on a wingmate's tail
         if(d < 40 || (!free && d > 600)) continue;
         const r = Math.max(9, Math.min(40, (e.r + 2) * 420 / d));
-        g.strokeStyle = col; g.lineWidth = 1.6;
-        const c = r * 0.45;
-        g.beginPath();
-        for(const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]){
-          g.moveTo(q.x + sx * r, q.y + sy * (r - c)); g.lineTo(q.x + sx * r, q.y + sy * r); g.lineTo(q.x + sx * (r - c), q.y + sy * r);
-        }
-        g.stroke();
         const tag = e.type === 'torpedo' ? 'TORPEDO' : e.type === 'cage' ? 'PUP!' : e.type === 'ace' && e.who ? (CAST[e.who] || {}).name : e.type === 'planet' ? 'PLANET!' : e.hunt ? 'ON ' + ((CAST[e.hunt] || {}).name || '').toUpperCase() + "'S TAIL" : '';
         if(tag){ g.font = font(10, 800); g.fillStyle = col; g.textAlign = 'center'; g.fillText(tag, q.x, q.y - r - 6); g.textAlign = 'left'; }
-        if(e.maxHp > 4 && e.type !== 'boss'){ g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(q.x - r, q.y + r + 4, r * 2, 3); g.fillStyle = col; g.fillRect(q.x - r, q.y + r + 4, r * 2 * e.hp / e.maxHp, 3); }
+        if(e.maxHp > 4 && (e.type === 'part' || (e.type === 'ace' && e.who) || e.type === 'mittensShip')){ g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(q.x - r, q.y + r + 4, r * 2, 3); g.fillStyle = col; g.fillRect(q.x - r, q.y + r + 4, r * 2 * e.hp / e.maxHp, 3); }
       } else if(free){
         // an arrow at the edge, pointing the way round to it
         let ax = q.nx, ay = q.ny;

@@ -119,6 +119,8 @@ await startGame(pg);
 ok(true, 'ADVENTURE, the map, Red Canyon, the briefing, the count - and the game starts');
 const fire = await pg.$('#b-fire'), boost = await pg.$('#b-boost');
 const fb = await fire.boundingBox(), bb = await boost.boundingBox();
+// past the count (FIRE does nothing during it), however slow the frames
+await pg.waitForFunction(() => window.__dog.sim.t > 1.5, null, {timeout: 30000});
 const shotsBefore = await pg.evaluate(() => window.__dog.sim.stats.shots);
 for(let i = 0; i < 3; i++){ await pg.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2); await pg.mouse.down(); await pg.waitForTimeout(60); await pg.mouse.up(); await pg.waitForTimeout(450); }
 const taps = await pg.evaluate(() => window.__dog.sim.stats.shots) - shotsBefore;
@@ -142,7 +144,8 @@ await pg.mouse.move(470, 120); await pg.mouse.down(); await pg.mouse.move(580, 1
 ok(await pg.waitForFunction(() => window.__dog.sim.p.rollT > 0, null, {timeout: 1500}).then(() => true, () => false), 'a sideways swipe barrel-rolls');
 await pg.screenshot({path: '/tmp/dogfight-canyon.png'});
 await pg.click('#b-pause');
-await pg.waitForTimeout(200);
+// it pauses on the next frame, which can be slow in this software-drawn browser
+await pg.waitForFunction(() => window.__dog.state === 'pause', null, {timeout: 3000}).catch(() => {});
 ok(await pg.evaluate(() => window.__dog.state === 'pause') && await pg.isVisible('#pause'), 'the pause button pauses');
 await pg.close();
 

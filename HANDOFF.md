@@ -118,8 +118,12 @@ U-TURN in the clearing. Right: FIRE, BOMB, TARGET in the clearing.
   starts charging, full 0.75 s later (a green glow on the nose, a ring on
   the reticle). Once charged, the reticle locks on to whatever is within
   12° of the nose (sticky until it is 34° off). Let go: a charged shot,
-  230 m/s, homing if locked, 7 damage plus a 22 m burst. **Only a charged
-  shot locks on.**
+  230 m/s, homing if locked, 7 damage plus a 30 m burst. **Only a charged
+  shot locks on.** **Combos** (round 5): the burst hits every small enemy
+  inside it for the full 7, and anything it destroys goes off in turn (a
+  24 m, 6-damage blast, `CHAIN` in `sim.js`), so a pack goes up together.
+  Every kill past the first in one chain is a bonus hit, shown as "+N
+  COMBO". Boss parts take the burst with falloff and don't chain.
 - **BOMB**: straight ahead, no lock; bursts after 1.3 s or on contact,
   50 m, and clears enemy bolts inside it.
 - **Swipe** sideways anywhere else (< 450 ms, > 40 px): a barrel roll. It
@@ -261,6 +265,9 @@ Tower's rods were unbeatable until this. Attacks: fans of bolts, the
 Brute's torpedoes, launched fighters, lightning strikes, catnip puffs,
 batted planets, swatting paws, the carrier's and the Moon's guns.
 
+**The Kennel's cages**: when the guards are down but pups are still
+caged, the Warden waits up to 14 s (Rosie says to hurry) instead of 2.5.
+
 **Hazards**: lightning (a glowing column marks where it'll hit in 1.3 s; 8
 damage), catnip clouds (3.5 s of backwards controls), Mittens' planets (8
 damage, shootable, a barrel roll bats them away), mines (blow up within
@@ -350,6 +357,21 @@ tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
   own head in the cockpit; pointy-eared pets get wing tips that stand up.
 - **Weather**: rain and lightning (Thunder Peaks), snow (Frost Fang),
   spores (Catnip Jungle).
+- **Enemies are big** (round 5, "make all the enemies bigger like they are
+  in Star Fox"): fighters are drawn at about 2× their old size (darts
+  3.2, aces 3.4, raiders and Mittens' ship 3.2 in `models.js`), turrets,
+  torpedoes and mines 1.35–1.4×, and their hit zones grew to match (dart
+  4.6 m, raider 5, ace 4.8). That made Top Dog easy, so Top Dog enemies
+  are tougher (hp ×1.4, damage ×1.45, less aim assist).
+- **No boxes round enemies** (round 5: "very non-Star-Foxy"). Only those
+  that need a word get one (TORPEDO, PUP!, PLANET!, a named ace, a cat on
+  a wingmate's tail), and health bars only on boss parts and named aces.
+  The edge arrows in the clearing stay.
+- **Sharpness** (round 5): the screen's own pixels up to 2× (was 1.5×),
+  and anisotropic filtering on the ground's grain. Too slow for 2 s steps
+  down: 1.5×, 1.25×, 1×, then no bloom at 0.8×. 4× multisampling was
+  tried and dropped: it halved the frame rate in the check browser (13 to
+  6 fps), and changing it mid-game didn't take.
 - **Sizes** (round 4, "make my ship smaller so I can see more"): the
   ship is drawn at 0.85 and the camera sits further back (`CAM` in
   `world.js`: 25 m behind and 9 up on the rail, 24 and 6.5 in the chase

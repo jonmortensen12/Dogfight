@@ -311,6 +311,8 @@ function react(events){
       case 'charged': snd.sfx('pickup', null, 0.5); break;
       case 'chargeShot': snd.sfx('missile', {x: p.x, y: p.y, z: p.z}, 1.2); snd.sfx('laser', {x: p.x, y: p.y, z: p.z}, 1.6); break;
       case 'burst': snd.sfx('boom', at, 0.9); break;
+      case 'chain': snd.sfx('boom', at, 0.7, 1.2); break;
+      case 'combo': hud.combo = {n: e.n, t: 0}; break;
       case 'missile': snd.sfx('missile', {x: p.x, y: p.y, z: p.z}); break;
       case 'torpedo': snd.sfx('torpedo', at); break;
       case 'bat': snd.sfx('whoosh', at, 1.4); break;
@@ -392,7 +394,8 @@ function frame(now){
 
   if(state === 'play'){
     if(dt > 0.026) slow += dt; else fast += dt;
-    if(slow > 2 && qLevel < 3){ qLevel++; slow = fast = 0; const pr = [1.25, 1, 0.8][qLevel - 1] || 0.8; world.setQuality(Math.min(pr, world.pr), qLevel < 3); }
+    // too slow for 2 s: a step down - fewer pixels, then no bloom
+    if(slow > 2 && qLevel < 4){ qLevel++; slow = fast = 0; const pr = [1.5, 1.25, 1, 0.8][qLevel - 1] || 0.8; world.setQuality(Math.min(pr, world.pr), qLevel < 4); }
     if(fast > 6){ slow = Math.max(0, slow - 1); fast = 0; }
   }
 }
