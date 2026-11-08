@@ -72,6 +72,12 @@ const steer = await pg.evaluate(async () => {
     ['topAway', [['right', -15]]], ['topToward', [['right', 15]]], ['wheelRight', [['out', -20]]], ['wheelLeft', [['out', 20]]]]){
     send(turns); const r = inp.read(); out[k] = {sx: r.sx, sy: r.sy, sr: r.sr};
   }
+  // rolled over like a wheel and THEN steered: about the phone's own axes
+  for(const [k, turns] of [['rolledAway', [['out', -30], ['right', -15]]], ['rolledLeft', [['out', -30], ['up', 15]]]]){
+    send(turns); const r = inp.read(); out[k] = {sx: r.sx, sy: r.sy, sr: r.sr};
+  }
+  inp.wheel = false; send([['out', -20]]); out.noWheel = inp.read().sr;
+  inp.held.bankR = 1; out.bankR = inp.read().sr; inp.held = {}; inp.wheel = true;
   inp.invert = true; send([['right', -15]]); out.awayInverted = inp.read().sy; inp.invert = false;
   return out;
 });
@@ -84,6 +90,9 @@ ok(steer.topAway.sy < -0.4 && small(steer.topAway.sx), `top tipped away: nose do
 ok(steer.topToward.sy > 0.4 && small(steer.topToward.sx), `top tipped towards you: nose up (${f(steer.topToward)})`);
 ok(steer.wheelRight.sr > 0.3 && small(steer.wheelRight.sx), `turned clockwise like a wheel: rolls right, does not turn (${f(steer.wheelRight)})`);
 ok(steer.wheelLeft.sr < -0.3 && small(steer.wheelLeft.sx), `turned anticlockwise: rolls left (${f(steer.wheelLeft)})`);
+ok(steer.rolledAway.sy < -0.4 && Math.abs(steer.rolledAway.sx) < 0.15, `rolled 30 degrees, then top tipped away: still just dives (${f(steer.rolledAway)})`);
+ok(steer.rolledLeft.sx < -0.4 && Math.abs(steer.rolledLeft.sy) < 0.15, `rolled 30 degrees, then left side closer: still just turns left (${f(steer.rolledLeft)})`);
+ok(small(steer.noWheel) && steer.bankR > 0.9, `Wheel off: turning like a wheel does nothing, the BANK button rolls (${steer.noWheel.toFixed(2)}, ${steer.bankR.toFixed(2)})`);
 ok(steer.awayInverted > 0.4, 'inverted: tipped away noses up');
 await pg.close();
 
@@ -214,7 +223,7 @@ ok(await pg.evaluate(() => window.__dog.save.flown.includes('canyon')), 'winning
 await pg.click('#again');
 await pg.waitForSelector('#map:not(.hide)');
 const open = await pg.evaluate(() => [...document.querySelectorAll('.node.next')].map(n => n.dataset.id).sort().join(','));
-ok(open === 'thunder,tidewater', `the map moves on: Tidewater or Thunder Peaks next (${open})`);
+ok(open === 'tidewater', `the map moves on: no secret found, so Tidewater is next (${open})`);
 await pg.close();
 
 pg = await page('');

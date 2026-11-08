@@ -237,6 +237,13 @@ export class Hud {
       if(a.chased){ g.font = font(10, 800); g.fillStyle = '#ff6a5a'; g.fillText('HELP!', x0 + fz + 70, ay + 4); }
       ay += fz + 4;
     }
+    // the level's secret, once there is something to count
+    const SC = s.secret;
+    if(SC && SC.type !== 'fork' && (SC.got > 0 || SC.done)){
+      g.font = font(11, 800); g.fillStyle = SC.done ? '#ffd040' : 'rgba(255,220,160,0.85)';
+      g.fillText((s.L.secret.label || 'SECRET') + ' ' + SC.got + '/' + SC.need + (SC.done ? '  ★' : ''), x0, ay + 4);
+      ay += 18;
+    }
     // the Moon's clock
     if(s.timer != null && s.phase !== 'won'){
       const t = Math.max(0, s.timer), mm = Math.floor(t / 60), ss = Math.floor(t % 60);

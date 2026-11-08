@@ -5,7 +5,8 @@
      - pull the LEFT side of the phone towards you (turn it about its own
        up-and-down line) to turn left, the right side to turn right
      - tip the top edge away to dive, towards you to climb
-     - turn it like a steering wheel to ROLL the ship
+     - turn it like a steering wheel to ROLL the ship (or, with the Wheel
+       setting off, hold the two BANK buttons instead)
    All three are measured from the grip the phone was in when it was
    CENTRED, so lying back on the couch or sitting up both work.
 
@@ -35,7 +36,7 @@ export class Input {
     this.q0 = new THREE.Quaternion();      // the centred grip
     this.centred = false;
     this.yaw = 0; this.pitch = 0; this.roll = 0;   // radians, from the centred grip
-    this.sens = 1; this.invert = false;
+    this.sens = 1; this.invert = false; this.wheel = true;
     this.held = {};                        // buttons held
     this.press = {};                       // one-shot presses since the last read
     this.keys = {};
@@ -79,14 +80,26 @@ export class Input {
   /* The turn from the centred grip, in the screen's own axes (x across,
      y up the screen, z out of it towards you): yaw about y, then pitch
      about x, then roll about z. */
+  /* The turn from the centred grip, split in the order a hand does it:
+     the wheel (roll) first, then the turn and the tip measured about the
+     phone's OWN axes as it is now held. So with the phone rolled over like
+     a wheel, "pull the left side closer" and "tip the top away" still mean
+     what they meant before the roll. (They used to be measured about the
+     unrolled axes, so after a big roll a tip came out as a turn - Jon's
+     "I have to tilt my phone in a direction other than expected".) */
   measure(){
     const rel = this.q0.clone().invert().multiply(this.sensorQ);
-    const e = new THREE.Euler().setFromQuaternion(rel, 'YXZ');
+    const e = new THREE.Euler().setFromQuaternion(rel, 'ZYX');
     this.yaw = e.y; this.pitch = e.x; this.roll = e.z;
     // bleed away slow wander in the turn while it is close to centre
     const now = performance.now(), dt = Math.min(0.1, (now - (this.lastBleed || now)) / 1000);
     this.lastBleed = now;
-    if(Math.abs(this.yaw) < 4 * D && dt > 0) this.q0.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw * Math.min(1, dt * 0.25)));
+    if(Math.abs(this.yaw) < 4 * D && dt > 0){
+      const yaw = this.yaw * (1 - Math.min(1, dt * 0.25));
+      const want = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch, yaw, this.roll, 'ZYX'));
+      this.q0.copy(this.sensorQ).multiply(want.invert());
+      this.yaw = yaw;
+    }
   }
 
   bindButtons(){
@@ -147,7 +160,7 @@ export class Input {
       const shape = (v, r) => { const a = Math.max(0, Math.abs(v) - dead) / r; const c = Math.min(1, a); return Math.sign(v) * (0.35 * c + 0.65 * c * c); };
       sx = -shape(this.yaw, 20 * D / sv);                         // left side closer: yaw +, turn left
       sy = shape(this.pitch, 20 * D / sv) * (this.invert ? -1 : 1);   // top towards you: pitch +, climb
-      sr = -shape(this.roll, 32 * D / sv);                        // wheel clockwise: roll -, roll right
+      if(this.wheel) sr = -shape(this.roll, 32 * D / sv);         // wheel clockwise: roll -, roll right
     }
     if(this.drag){
       const r = Math.min(innerWidth, innerHeight) * 0.16;
@@ -157,9 +170,11 @@ export class Input {
     const kx = (k.ArrowRight ? 1 : 0) - (k.ArrowLeft ? 1 : 0);
     const ky = (k.ArrowUp || k.KeyW ? 1 : 0) - (k.ArrowDown || k.KeyS ? 1 : 0);
     const kr = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+    const hb = (h.bankR ? 1 : 0) - (h.bankL ? 1 : 0);     // the bank buttons, held
     if(kx) sx = kx;
     if(ky) sy = ky * (this.invert ? -1 : 1);
     if(kr) sr = kr;
+    if(hb) sr = hb;
     const p = this.press;
     const out = {
       sx, sy, sr,

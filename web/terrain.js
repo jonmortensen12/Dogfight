@@ -59,10 +59,25 @@ export function rng(seed){
 
 /* ---------- the rail's line ---------- */
 let PA = [70, 34, 12], PL = [420, 170, 73], PP = [0, 1.3, 0.4];
-export function cx(u){ let x = 0; for(let i = 0; i < PA.length; i++) x += PA[i] * Math.sin(u / PL[i] + PP[i]); return x; }
-export function dcx(u){ let d = 0; for(let i = 0; i < PA.length; i++) d += PA[i] / PL[i] * Math.cos(u / PL[i] + PP[i]); return d; }
+function cx0(u){ let x = 0; for(let i = 0; i < PA.length; i++) x += PA[i] * Math.sin(u / PL[i] + PP[i]); return x; }
+function dcx0(u){ let d = 0; for(let i = 0; i < PA.length; i++) d += PA[i] / PL[i] * Math.cos(u / PL[i] + PP[i]); return d; }
+/* A fork: between u0 and u1 a second channel splits off to one side (side
+   -1 left, +1 right) by `off` metres and comes back. Fly into it and the
+   rail follows it (BRANCH 1) until the two meet again. */
+export let BRANCH = 0;
+export function setBranch(b){ BRANCH = b; }
+const FORK_RAMP = 320;
+export function forkOff(u){
+  const F = L && L.fork;
+  if(!F || u <= F.u0 || u >= F.u1) return 0;
+  const k = Math.min(smooth(F.u0, F.u0 + FORK_RAMP, u), 1 - smooth(F.u1 - FORK_RAMP, F.u1, u));
+  return F.side * F.off * k;
+}
+export function inFork(u){ const F = L && L.fork; return !!F && u > F.u0 && u < F.u1; }
+export function cx(u){ return cx0(u) + (BRANCH ? forkOff(u) : 0); }
+export function dcx(u){ return dcx0(u) + (BRANCH ? (forkOff(u + 1) - forkOff(u - 1)) / 2 : 0); }
 /* Half the rail corridor's width (the canyon floor, the trench, the gap through the rocks). */
-export function halfW(u){ return L.width(u); }
+export function halfW(u){ return BRANCH && inFork(u) ? Math.min(L.fork.width, L.width(u)) + (1 - Math.abs(forkOff(u)) / L.fork.off) * (L.width(u) - Math.min(L.fork.width, L.width(u))) : L.width(u); }
 /* The canyon's rim height (canyon and trench levels). */
 export function rimH(u){ return L.rim ? L.rim(u) : 90; }
 
@@ -77,13 +92,23 @@ export function lateralAt(u, x, z){ const f = railFrame(u); return (x - f.x) * f
 
 /* ---------- height ---------- */
 function canyonH(x, z){
-  const u = -z, G = L.groundParams || {};
+  const u = -z;
   if(u > ARENA_U - 150 && L.arena !== false) return 1e9;
-  const c = cx(u), sl = Math.hypot(dcx(u), 1);
+  let h = channelH(x, z, u, cx0(u), dcx0(u), L.width(u));
+  if(inFork(u)){
+    const o = forkOff(u), F = L.fork;
+    const w = Math.min(F.width, L.width(u)) + (1 - Math.abs(o) / F.off) * (L.width(u) - Math.min(F.width, L.width(u)));
+    h = Math.min(h, channelH(x, z, u, cx0(u) + o, dcx0(u) + (forkOff(u + 1) - forkOff(u - 1)) / 2, w));
+  }
+  return h;
+}
+function channelH(x, z, u, c, dc, w){
+  const G = L.groundParams || {};
+  const sl = Math.hypot(dc, 1);
   let d = Math.abs(x - c) / sl;
   const crag = G.crag == null ? 1 : G.crag;
   d += ((fbm(x * 0.018, z * 0.018, 3) - 0.5) * 14 + (vnoise(x * 0.09, z * 0.09) - 0.5) * 5) * crag;
-  const w = halfW(u), H = rimH(u);
+  const H = rimH(u);
   if(d < w){
     let y = (fbm(x * 0.03, z * 0.03, 3) - 0.5) * 3 * (G.dunes == null ? 1 : G.dunes);
     if(G.stream !== false) y -= 3.5 * (1 - smooth(4, 14, d));
@@ -130,9 +155,11 @@ function oceanH(x, z){
     const d = Math.abs(lateralAt(u, x, z));
     y -= 120 * (1 - smooth(halfW(u) + 20, halfW(u) + 120, d));
   }
-  const ra = Math.hypot(x - ARENA.x, z - ARENA.z);
-  y -= 140 * (1 - smooth(ARENA_R * 0.5, ARENA_R, ra));
-  y += smooth(ARENA_R + 100, ARENA_R + 400, ra) * 60;
+  if(L.arena !== false){
+    const ra = Math.hypot(x - ARENA.x, z - ARENA.z);
+    y -= 140 * (1 - smooth(ARENA_R * 0.5, ARENA_R, ra));
+    y += smooth(ARENA_R + 100, ARENA_R + 400, ra) * 60;
+  }
   return Math.max(y, -30);
 }
 /* The ground itself, wherever it is (below the waves too). */
@@ -203,6 +230,8 @@ export const lay = {
   arch(u, y, thick, look){ return {type: 'arch', u, y, thick, look: look || 'rock'}; },
   rock(u, off, y, r, look){ const p = railPoint(u, off, y); return {type: 'rock', x: p.x, y, z: p.z, r, u, look: look || 'asteroid'}; },
   rockAt(x, y, z, r, look){ return {type: 'rock', x, y, z, r, u: -z, look: look || 'asteroid'}; },
+  /* lay things out along the fork's other channel */
+  onFork(fn){ const b = BRANCH; BRANCH = 1; const out = fn(); BRANCH = b; for(const o of out) o.branch = 1; return out; },
 };
 
 /* ---------- loading a level ---------- */
@@ -220,10 +249,11 @@ export function setLevel(def){
   RAIL_TOP = def.railTop || 58;
   RAIL_FLOOR = def.railFloor != null ? def.railFloor : 6;
   WALL_MARGIN = def.wallMargin || 13;
+  BRANCH = 0;
   ARENA = {x: cx(ARENA_U), z: -ARENA_U, y: def.arenaY || 0};
   lay.arenaX = ARENA.x; lay.arenaZ = ARENA.z;
   OBSTACLES = def.obstacles ? def.obstacles(lay, rng(def.seed || 1)) : [];
-  for(const o of OBSTACLES) if(o.type === 'arch') Object.assign(o, railFrame(o.u), {w: halfW(o.u)});
+  for(const o of OBSTACLES) if(o.type === 'arch'){ BRANCH = o.branch || 0; Object.assign(o, railFrame(o.u), {w: halfW(o.u)}); BRANCH = 0; }
   buckets = new Map();
   for(const o of OBSTACLES) for(const k of bucketKeys(o)){ if(!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(o); }
   return def;

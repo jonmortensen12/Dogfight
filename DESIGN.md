@@ -3,7 +3,11 @@
 **Status (2026-11-08):** the single-player adventure below is built:
 the story, ten planets and the route map, the wingmates, every boss,
 Mittens and the ending (see HANDOFF.md, and `web/levels.js` for the
-script). The cast are placeholders until the real pets go into
+script). Round 4 made the route earned rather than picked: each early
+planet has a secret (a fork, buoys, rings, every pup) that opens the hard
+planet next, and the levels now come in four shapes (rail then clearing,
+rail only with a fleeing boss, rail only with the boss on the rail, and
+clearing only). The cast are placeholders until the real pets go into
 `web/cast.js`. Multiplayer is not built yet. Tone, from Jon: silly all the
 way.
 

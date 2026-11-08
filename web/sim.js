@@ -29,7 +29,7 @@
    Input: {sx, sy, sr} the stick in -1..1 (turn right, nose up, roll
    right), fire, boost, brake (held), and the one-shot presses bomb, loop,
    uturn, roll (a barrel roll: -1 left, +1 right). */
-import {rng, height, normalAt, hitObstacle, railFrame, halfW, OBSTACLES, archUnder, setLevel, railPoint, lateralAt, spireTop,
+import {rng, height, normalAt, hitObstacle, railFrame, halfW, OBSTACLES, archUnder, setLevel, railPoint, lateralAt, spireTop, setBranch, BRANCH,
   RAIL_END, ARENA, ARENA_LIMIT, CEILING, FLOOR, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN, GROUND} from './terrain.js';
 import {LEVELS} from './levels.js';
 import {CAST, ACES, lineFor} from './cast.js';
@@ -42,6 +42,14 @@ export const SKILLS = {
 };
 
 export const SPEED = {rail: 60, railBoost: 100, railBrake: 32, free: 62, freeBoost: 108, freeBrake: 34};
+/* How hard the ship answers the stick (raised 2026-11-08: "more responsive,
+   tighter turns"). Rail: the fastest slide across and up the box (m/s) and
+   how quickly it gets there. Free: turn rates in rad/s. Banking into a turn
+   (the wheel or a bank button) adds bankBoost: the classic tight turn. */
+export const HANDLING = {railX: 60, railY: 46, railAccel: 9, levelTurn: 2.1, levelPitch: 1.7, fullPitch: 2.1, fullTurn: 1.8, fullRoll: 3.4, bankBoost: 0.6};
+const PICKUP_R = 11;
+/* A wingmate's shot does half what Teddy's does: they help, he wins. */
+const ALLY_DMG = 0.5;
 const SHOT_SPEED = 430, BOLT_SPEED = 125;
 const SHIP_R = 2.2;
 /* The charged shot: starts charging after holding FIRE this long, full after
@@ -60,6 +68,8 @@ const KINDS = {
   part: {hp: 8, r: 6, speed: 0},
   mittensShip: {hp: 18, r: 4, speed: 86},
   boss: {hp: 30, r: 14, speed: 0},
+  mine: {hp: 1, r: 3, speed: 0},
+  buoy: {hp: 1, r: 5.5, speed: 0},
 };
 
 /* The bosses. Part offsets are [right, up, forward] from the body, in the
@@ -69,7 +79,8 @@ export const BOSS = {
     parts: [{off: [21, -1.5, -3], hp: 11, r: 7, kind: 'pod'}, {off: [-21, -1.5, -3], hp: 11, r: 7, kind: 'pod'}],
     fan: 3.0, torp: [8.5, 6.5]},
   carrier: {hp: 32, r: 18, move: 'orbit', orbitR: 230, alt: 10, speed: 16,
-    parts: [[12, 9, 24], [-12, 9, 24], [12, 9, -20], [-12, 9, -20]].map(off => ({off, hp: 7, r: 5, kind: 'gun'})),
+    // the guns face aft: it is chased, so they are the end you can reach
+    parts: [[12, 9, -38], [-12, 9, -38], [13, 16, -20], [-13, 16, -20]].map(off => ({off, hp: 7, r: 5, kind: 'gun'})),
     launch: 9, gunFire: 2.2},
   tower: {hp: 30, r: 14, move: 'fixed', alt: 150,
     parts: [[24, 12, 0], [-12, 12, 21], [-12, 12, -21]].map(off => ({off, hp: 9, r: 6, kind: 'rod'})),
@@ -77,8 +88,8 @@ export const BOSS = {
   warden: {hp: 32, r: 16, move: 'fixed', alt: 40, spin: 0.45, spinAxis: 'up',
     parts: [0, 1, 2, 3].map(i => ({off: [Math.cos(i * Math.PI / 2) * 38, 0, Math.sin(i * Math.PI / 2) * 38], hp: 8, r: 6, kind: 'lock'})),
     fan: 3.2, launch: 11},
-  snowball: {hp: 32, r: 22, move: 'orbit', orbitR: 200, alt: 40, speed: 26,
-    parts: [0, 1, 2, 3].map(i => ({off: [Math.cos(i * Math.PI / 2) * 27, 6, Math.sin(i * Math.PI / 2) * 27], hp: 9, r: 6, kind: 'vent'})),
+  snowball: {hp: 32, r: 22, move: 'roll', alt: 22, speed: 26,
+    parts: [[20, 12, 16], [-20, 12, 16], [20, -8, 16], [-20, -8, 16]].map(off => ({off, hp: 9, r: 6, kind: 'vent'})),
     fan: 2.7, fanN: 7},
   queen: {hp: 30, r: 12, move: 'hover', alt: 70, spin: 0.25, spinAxis: 'fwd',
     parts: [0, 1, 2, 3, 4].map(i => ({off: [Math.cos(i * 1.2566) * 26, Math.sin(i * 1.2566) * 26, 2], hp: 8, r: 7, kind: 'petal'})),
@@ -86,9 +97,9 @@ export const BOSS = {
   core: {hp: 30, r: 14, move: 'fixed', spin: 0.45, spinAxis: 'fwd',
     parts: [0, 1, 2, 3].map(i => ({off: [Math.cos(i * Math.PI / 2) * 24, Math.sin(i * Math.PI / 2) * 24, 4], hp: 8, r: 7, kind: 'panel'})),
     fan: 2.8},
-  mittens: {hp: 30, r: 30, move: 'hover', alt: 60,
+  mittens: {hp: 24, r: 30, move: 'hover', alt: 60,
     parts: [{off: [62, -22, 18], hp: 14, r: 14, kind: 'paw'}, {off: [-62, -22, 18], hp: 14, r: 14, kind: 'paw'}],
-    bat: 4.4, fan: 3.8},
+    bat: 5.2, fan: 3.8},
 };
 
 const len = (x, y, z) => Math.hypot(x, y, z);
@@ -141,7 +152,10 @@ export function newSim(opts){
     script: [], stats: {kills: 0, shots: 0, hits: 0, gold: 0, goldTotal: 0, damage: 0, time: 0, bombs: 0, charged: 0, rescued: 0, saved: 0},
     boss: null, bossKind: null, warn: '', arena: ARENA, checkpoint: opts.start === 'arena' ? 'arena' : 'rail',
     timer: null, storm: false, stormT: 3, railHold: false, downed: [], joined: [],
+    branch: 0, forkDecided: false, hard: !!opts.hard,
+    secret: L.secret ? {type: L.secret.type, need: L.secret.need || 1, got: 0, done: false} : null,
   };
+  setBranch(0);
   const u0 = opts.start === 'arena' ? (L.railBossU || RAIL_END) - 160 : 0;
   s.p = {
     x: 0, y: 30, z: 0, fx: 0, fy: 0, fz: -1, ux: 0, uy: 1, uz: 0, vx: 0, vy: 0, vz: 0,
@@ -151,9 +165,18 @@ export function newSim(opts){
     hitT: 0, fireT: 0, lock: null, dead: false, deadT: 0, behind: 0, confused: 0,
   };
   placeRail(s, 0);
+  if(L.start === 'arena'){
+    // an all-range level: straight into the clearing, flying in from its edge
+    const p = s.p;
+    p.x = ARENA.x; p.z = ARENA.z + ARENA_LIMIT * 0.72; p.y = GROUND === 'space' ? (ARENA.y || 0) + 30 : height(ARENA.x, p.z) + 120;
+    p.fx = 0; p.fy = 0; p.fz = -1;
+  }
   for(const w of opts.allies || []) addAlly(s, w, true);
-  buildScript(s, u0);
-  if(opts.start === 'arena') say(s, 'rosie', 'Starting you near the end of the rail, {teddy}.', 2.5);
+  if(L.start === 'arena'){ s.script = []; startArena(s); }
+  else {
+    buildScript(s, u0);
+    if(opts.start === 'arena') say(s, 'rosie', 'Starting you near the end of the rail, {teddy}.', 2.5);
+  }
   return s;
 }
 
@@ -171,7 +194,7 @@ function sayAlly(s, who, key){
 function buildScript(s, u0){
   const S = [];
   const A = {
-    at: (u, fn) => { if(u >= u0) S.push({u, fn}); },
+    at: (u, fn, branch) => { if(u >= u0) S.push({u, fn, branch}); },
     say: (who, text, dur) => { if(who.startsWith('wing') && !s.allies.some(a => a.id === who && !a.gone) && !s.L.joins?.includes(who)) return; say(s, who, text, dur); },
     formation: (n, u, o) => formation(s, n, u, o),
     swoop: n => swoop(s, n),
@@ -183,6 +206,8 @@ function buildScript(s, u0){
     cloud: (u, ox, y) => { const q = railPoint(u, ox, y); s.hazards.push({kind: 'nip', x: q.x, y, z: q.z, r: 13, life: 999, vx: 0, vy: 0, vz: 0}); },
     join: who => addAlly(s, who),
     aces: (n, u) => railAces(s, n, u),
+    mines: (u, n) => mines(s, u, n),
+    buoy: (u, ox) => { const q = railPoint(u, ox, 6); newEnemy(s, 'buoy', {x: q.x, y: 6, z: q.z, ru: u, rail: true, secret: true, fireT: 999}); },
   };
   s.L.script && s.L.script(A);
   S.sort((a, b) => a.u - b.u);
@@ -190,10 +215,11 @@ function buildScript(s, u0){
   // the golden bones still ahead: count them by placing them on a scratch copy
   const real = s.pickups;
   s.pickups = [];
-  const quiet = {say: A.say, formation: A.formation, swoop: A.swoop, cross: A.cross, turret: A.turret, turretOn: A.turretOn, cloud: A.cloud, join: A.join, aces: A.aces, storm: A.storm};
+  const quiet = {say: A.say, formation: A.formation, swoop: A.swoop, cross: A.cross, turret: A.turret, turretOn: A.turretOn, cloud: A.cloud, join: A.join, aces: A.aces, storm: A.storm, mines: A.mines, buoy: A.buoy};
   for(const k of Object.keys(quiet)) A[k] = () => {};
-  for(const S1 of S) S1.fn();
-  s.stats.goldTotal = s.pickups.filter(k => k.type === 'gold').length;
+  const goldOn = br => { s.pickups = []; for(const S1 of S) if(!S1.branch || S1.branch === br) S1.fn(); return s.pickups.filter(k => k.type === 'gold').length; };
+  s.goldAlt = goldOn('alt');
+  s.stats.goldTotal = goldOn('main');
   Object.assign(A, quiet);
   s.pickups = real;
 }
@@ -230,6 +256,15 @@ function railAces(s, n, u){
     const side = i % 2 ? 1 : -1;
     const who = ACES[(s.aceNext = ((s.aceNext || 0) % 4) + 1) - 1];
     newEnemy(s, 'ace', {state: 'swoopIn', rel: -80 - i * 16, rox: side * 12, roy: base + 50, holdY: base + 4 + i * 8, holdX: side * (10 + i * 8), rail: true, t: -i * 0.4, who, holdFor: 12, hp: 6});
+  }
+}
+/* A field of floating mines across the rail at u: shoot them or go round. */
+function mines(s, u, n){
+  const base = GROUND === 'space' ? 0 : 26;
+  for(let i = 0; i < n; i++){
+    const lim = halfW(u) - WALL_MARGIN;
+    const q = railPoint(u + (s.rand() - 0.5) * 60, (s.rand() * 2 - 1) * lim, base + (s.rand() - 0.5) * 50);
+    newEnemy(s, 'mine', {x: q.x, y: q.y, z: q.z, ru: u, rail: true, fireT: 999});
   }
 }
 function crossing(s, u, side, y){
@@ -276,7 +311,54 @@ function startArena(s){
   s.pickups = s.pickups.filter(k => !k.taken && k.u > RAIL_END - 50);
   s.hazards = s.hazards.filter(h => h.kind !== 'nip' || h.life < 900);
   if(s.L.timer){ s.timer = s.L.timer; }
+  // an all-range level's pickups float round the clearing
+  for(const [type, a, r, alt] of s.L.arenaPickups || []){
+    const x = ARENA.x + Math.cos(a) * r, z = ARENA.z + Math.sin(a) * r;
+    s.pickups.push({id: s.nextId++, type, x, y: GROUND === 'space' ? (ARENA.y || 0) + alt : height(x, z) + 40 + alt, z, u: -z, taken: false, t: 0});
+    if(type === 'gold') s.stats.goldTotal++;
+  }
   ev(s, 'free');
+}
+/* A boss you chase: it runs ahead down the rail and you fly after it,
+   shooting. If the rail runs out first, it gets away. */
+function startChase(s){
+  s.phase = 'chase';
+  spawnBoss(s);
+}
+/* The fork: where the rail splits, whichever channel Teddy is in when the
+   two pull apart is the one the rail follows. The ship's place on the
+   screen does not jump: its offset is re-measured from the new line. */
+function fork(s){
+  const F = s.L.fork, p = s.p, r = p.rail;
+  if(!F || p.dead) return;
+  if(!s.forkDecided && r.u >= F.u0 + 110){
+    s.forkDecided = true;
+    if(r.ox * F.side > (halfW(r.u) - WALL_MARGIN) * 0.35){
+      setBranch(1); s.branch = 1;
+      r.ox = lateralAt(r.u, p.x, p.z);
+      ev(s, 'fork', {branch: 1});
+      if(s.goldAlt != null) s.stats.goldTotal = s.goldAlt;
+      if(F.say) say(s, F.say[0], F.say[1]);
+      if(s.secret && s.secret.type === 'fork') secretStep(s, 1);
+    }
+  }
+  if(s.branch === 1 && r.u >= F.u1){
+    setBranch(0); s.branch = 0;
+    r.ox = lateralAt(r.u, p.x, p.z);
+  }
+}
+/* A step towards the level's secret (all the buoys, all the rings, the fork...). */
+function secretStep(s, n){
+  const S = s.secret;
+  if(!S || S.done) return;
+  S.got = Math.min(S.need, S.got + n);
+  ev(s, 'secretStep', {got: S.got, need: S.need});
+  if(S.got >= S.need){
+    S.done = true;
+    ev(s, 'secret');
+    const F = s.L.secret.found;
+    if(F) say(s, F[0], F[1], 3.6);
+  }
 }
 function startRailBoss(s){
   s.phase = 'railboss'; s.railHold = true; s.wave = 1;
@@ -308,13 +390,13 @@ function flyIn(s, type, pos, o){
 }
 function nextWave(s){
   s.wave++;
-  const W = s.L.waves || [];
+  const W = (s.L.waves || []).concat(s.hard && s.L.hardWaves ? s.L.hardWaves : []);
   if(s.wave > W.length){ spawnBoss(s); return; }
   const w = W[s.wave - 1];
   if(w.say) say(s, w.say[0], w.say[1]);
   for(const g of w.spawn || []){
     const n = g.n || 1, ang = g.ang || 0, spread = g.spread || 0.35;
-    for(let i = 0; i < n; i++) flyIn(s, g.type, around(s, ang + (i - (n - 1) / 2) * spread, (g.dist || 650) + i * 25, 70 + (i * 37 % 110)));
+    for(let i = 0; i < n; i++) flyIn(s, g.type, around(s, ang + (i - (n - 1) / 2) * spread, (g.dist || 650) + i * 25, 70 + (i * 37 % 110)), g.type === 'ace' ? {who: ACES[i % 4]} : g.type === 'mine' ? {fireT: 999, state: 'float'} : undefined);
   }
   if(w.cages){
     // cages hang off the prison station's modules
@@ -343,10 +425,13 @@ function callForHelp(s, who){
 function spawnBoss(s){
   const L = s.L, B = L.boss, p = s.p;
   s.bossKind = B.type; s.waveT = -1;
+  // any pups still caged are carried off
+  const caged = s.enemies.filter(e => e.type === 'cage');
+  if(caged.length){ s.enemies = s.enemies.filter(e => e.type !== 'cage'); ev(s, 'carried', {n: caged.length}); say(s, 'rosie', "They're hauling the last cages away! Too late for those pups...", 3); }
   if(B.warn) say(s, B.warn[0], B.warn[1]);
   ev(s, 'bosswarn');
   if(B.type === 'aces'){
-    ACES.forEach((who, i) => flyIn(s, 'ace', around(s, Math.PI + (i - 1.5) * 0.5, 550, 120 + i * 30), {who, boss: true}));
+    ACES.forEach((who, i) => flyIn(s, 'ace', around(s, Math.PI + (i - 1.5) * 0.5, 550, 120 + i * 30), {who, boss: true, hp: 24}));
     s.boss = {aces: true, name: B.name};
     return;
   }
@@ -366,6 +451,8 @@ function spawnBoss(s){
     if(B.type === 'core'){
       const q = railPoint(L.railBossU + 230, 0, 34);
       pos = q;
+    } else if(s.phase === 'chase' || D.move === 'roll'){
+      pos = railPoint(p.rail.u + 320, 0, D.alt);
     } else if(D.move === 'orbit'){
       const a = Math.atan2(p.z - ARENA.z, p.x - ARENA.x) + Math.PI;
       pos = {x: ARENA.x + Math.cos(a) * (D.orbitR + 200), y: D.alt + (GROUND === 'space' ? ARENA.y || 0 : 0), z: ARENA.z + Math.sin(a) * (D.orbitR + 200)};
@@ -374,7 +461,8 @@ function spawnBoss(s){
     }
     const b = newEnemy(s, 'boss', {kind: B.type, x: pos.x, y: pos.y, z: pos.z, hp: D.hp, r: D.r, speed: D.speed || 0, state: 'boss', wave: s.wave,
       shielded: true, orbitA: Math.atan2(pos.z - ARENA.z, pos.x - ARENA.x), spinA: 0, fireT: 3, t2: 4, t3: 5});
-    if(B.type === 'core'){ const f = railFrame(L.railBossU); b.fx = -f.tx; b.fz = -f.tz; b.fy = 0; }
+    if(B.type === 'core' || D.move === 'roll'){ const f = railFrame(p.rail.u); b.fx = -f.tx; b.fz = -f.tz; b.fy = 0; b.ru = p.rail.u + 320; }
+    else if(s.phase === 'chase'){ const f = railFrame(p.rail.u); b.fx = f.tx; b.fz = f.tz; b.fy = 0; b.chase = true; b.ru = p.rail.u + 320; }
     else { const d = norm({x: p.x - b.x, y: 0, z: p.z - b.z}); b.fx = d.x; b.fz = d.z; }
     s.boss = b;
     D.parts.forEach((pt, i) => newEnemy(s, 'part', {kind: pt.kind, parent: b.id, off: pt.off, hp: pt.hp, r: pt.r, wave: s.wave, fireT: 2 + i * 0.7, idx: i}));
@@ -414,7 +502,7 @@ export function placeParts(s, b, dt){
 function bossAI(s, b, dt){
   const D = BOSS[b.kind], p = s.p, K = s.K;
   // moving
-  if(D.move === 'orbit'){
+  if(D.move === 'orbit' && !b.chase){
     b.orbitA += dt * (D.speed || 20) / D.orbitR * 0.6;
     const tx = ARENA.x + Math.cos(b.orbitA) * D.orbitR, tz = ARENA.z + Math.sin(b.orbitA) * D.orbitR;
     const ty = D.alt + (GROUND === 'space' ? ARENA.y || 0 : 0) + (b.kind === 'carrier' ? 0 : Math.sin(b.t * 0.4) * 15);
@@ -422,6 +510,25 @@ function bossAI(s, b, dt){
     moveFwd(b, d, 0.3, (D.speed || 20) * s.pace, dt);
     if(b.kind === 'carrier') b.y = ty;
     b.bank *= 0.5;
+  } else if(b.chase){
+    // running away down the rail, weaving, a few hundred metres ahead
+    b.ru = p.rail.u + 260 + Math.sin(b.t * 0.3) * 40;
+    const q = railPoint(b.ru, Math.sin(b.t * 0.23) * 22, D.alt);
+    b.x = q.x; b.y = q.y; b.z = q.z;
+    const g = railFrame(b.ru); b.fx = g.tx; b.fy = 0; b.fz = g.tz;
+  } else if(D.move === 'roll'){
+    // the Snowball: rolls down the canyon at Teddy, then back up it, swaying
+    b.rollT = (b.rollT || 0) + dt;
+    const cyc = (b.rollT % 9) / 9, k = cyc < 0.5 ? cyc * 2 : 2 - cyc * 2;   // 0 far .. 1 near
+    const prevU = b.ru;
+    b.ru = p.rail.u + 320 - 300 * k * k * (3 - 2 * k);
+    const lim = halfW(b.ru) - D.r;
+    const q = railPoint(b.ru, Math.sin(b.t * 0.5) * Math.max(0, lim) * 0.8, D.alt);
+    b.x = q.x; b.y = q.y; b.z = q.z;
+    b.roll = (b.roll || 0) + (b.ru - prevU) / D.r;
+    const f = railFrame(b.ru); b.fx = -f.tx; b.fy = 0; b.fz = -f.tz;
+    // run Teddy over if he is in the way
+    if(distP(s, b) < D.r + 3 && p.hitT <= 0){ damage(s, 15, 'snowball'); p.hitT = 0.9; ev(s, 'swat', {x: p.x, y: p.y, z: p.z}); p.rail.vy = 30; }
   } else {
     // fixed or hovering: turn to face Teddy, slowly
     const d = norm({x: p.x - b.x, y: 0, z: p.z - b.z});
@@ -431,7 +538,19 @@ function bossAI(s, b, dt){
   b.spinA = (b.spinA || 0) + (D.spin || 0) * dt;
   placeParts(s, b, dt);
   const parts = s.enemies.filter(q => q.parent === b.id && q.hp > 0);
-  if(b.shielded && parts.length === 0){
+  if(b.kind === 'mittens' && parts.length === 0){
+    // her face is open only while she opens her mouth to hiss
+    b.mouthT = (b.mouthT || 0) + dt;
+    const c = b.mouthT % 7, open = c > 3.5;
+    b.mouth = open ? Math.min(1, (c - 3.5) * 4) * Math.min(1, (7 - c) * 4) : 0;
+    if(open && b.shielded){
+      b.shielded = false;
+      ev(s, 'hiss', {x: b.x, y: b.y, z: b.z});
+      const base = aimAt(s, b, BOLT_SPEED * s.pace), r = norm(cross(base, {x: 0, y: 1, z: 0}));
+      for(let i = -4; i <= 4; i++) bolt(s, b, norm({x: base.x + r.x * i * 0.07, y: base.y, z: base.z + r.z * i * 0.07}), 7, {x: b.x + b.fx * 30, y: b.y - 6, z: b.z + b.fz * 30});
+      if(!b.saidMouth){ b.saidMouth = true; say(s, 'wing3', 'Her mouth! Shoot when she opens it to hiss!', 2.6); }
+    } else if(!open && !b.shielded) b.shielded = true;
+  } else if(b.shielded && parts.length === 0){
     b.shielded = false;
     ev(s, 'shieldDown', {x: b.x, y: b.y, z: b.z});
     if(b.kind === 'mittens') say(s, 'mittens', 'My PAWS! You... you naughty, naughty dogs!');
@@ -468,8 +587,8 @@ function bossAI(s, b, dt){
     if(b.t3 <= 0){
       b.t3 = D.launch * K.fire;
       if(s.enemies.filter(e => e.type === 'dart').length < 4){
-        const e = flyIn(s, 'dart', {x: b.x + b.fx * 30, y: b.y + 15, z: b.z + b.fz * 30}, {wave: 0});
-        e.fx = b.fx; e.fz = b.fz;
+        if(s.mode === 'rail') swoop(s, 2);
+        else { const e = flyIn(s, 'dart', {x: b.x + b.fx * 30, y: b.y + 15, z: b.z + b.fz * 30}, {wave: 0}); e.fx = b.fx; e.fz = b.fz; }
         ev(s, 'launch', {x: b.x, y: b.y, z: b.z});
       }
     }
@@ -581,13 +700,19 @@ export function step(s, dt, inp){
     ship(s, dt, inp);
   }
   if(s.mode === 'rail'){
-    while(s.script.length && s.script[0].u <= p.rail.u){ s.script.shift().fn(); }
+    while(s.script.length && s.script[0].u <= p.rail.u){ const S1 = s.script.shift(); if(!S1.branch || (S1.branch === 'alt') === (s.branch === 1)) S1.fn(); }
+    fork(s);
     if(!p.dead && !s.railHold && s.phase === 'rail'){
-      if(s.L.railBossU && p.rail.u >= s.L.railBossU) startRailBoss(s);
-      else if(!s.L.railBossU && p.rail.u >= RAIL_END) startArena(s);
+      if(s.L.railChase && p.rail.u >= s.L.railChase.u) startChase(s);
+      else if(s.L.railBossU && p.rail.u >= s.L.railBossU) startRailBoss(s);
+      else if(!s.L.railBossU && !s.L.railChase && p.rail.u >= RAIL_END) startArena(s);
+    }
+    if(s.phase === 'chase' && !p.dead && p.rail.u > s.L.railChase.u + s.L.railChase.len){
+      s.failWhy = s.L.railChase.escape || 'It got away!'; p.dead = true; p.deadT = 1.5; ev(s, 'escaped');
+      if(s.L.railChase.say) say(s, s.L.railChase.say[0], s.L.railChase.say[1]);
     }
   } else if(s.phase === 'arena'){
-    const left = s.enemies.filter(e => e.wave === s.wave && e.type !== 'torpedo' && e.type !== 'planet').length;
+    const left = s.enemies.filter(e => e.wave === s.wave && e.type !== 'torpedo' && e.type !== 'planet' && e.type !== 'cage' && e.type !== 'mine').length;
     if(s.waveT > 0){ s.waveT -= dt; if(s.waveT <= 0) nextWave(s); }
     else if(s.wave > 0 && left === 0 && !s.bossKind){ s.waveT = 2.5; }
   }
@@ -638,7 +763,9 @@ function enemies(s, dt){
   for(const e of s.enemies){
     e.t += dt; e.flash = Math.max(0, e.flash - dt * 4);
     const px = e.x, py = e.y, pz = e.z;
-    if(e.type === 'turret') turretAI(s, e, dt);
+    if(e.type === 'mine') mineAI(s, e, dt);
+    else if(e.type === 'buoy'){ e.y = 6 + Math.sin(e.t * 1.3 + e.ph) * 0.6; }
+    else if(e.type === 'turret') turretAI(s, e, dt);
     else if(e.rail) railAI(s, e, dt);
     else if(e.type === 'dart' || e.type === 'ace' || e.type === 'mittensShip') dogfight(s, e, dt);
     else if(e.type === 'raider') strafer(s, e, dt);
@@ -650,7 +777,7 @@ function enemies(s, dt){
   if(s.later){ for(const l of s.later) if(s.t >= l.t){ l.fn(); l.t = Infinity; } s.later = s.later.filter(l => l.t !== Infinity); }
   s.enemies = s.enemies.filter(e => {
     if(e.hp <= 0 || e.gone) return false;
-    if(s.mode === 'rail' && (e.type === 'turret' || e.state === 'oncoming' || e.state === 'cross') && e.ru < p.rail.u - 80) return false;
+    if(s.mode === 'rail' && (e.type === 'turret' || e.type === 'mine' || e.type === 'buoy' || e.state === 'oncoming' || e.state === 'cross') && e.ru < p.rail.u - 80) return false;
     return true;
   });
 }
@@ -671,8 +798,11 @@ function flyRail(s, dt, inp){
   p.speed += (want - p.speed) * Math.min(1, 2.5 * dt);
   if(!s.railHold) r.u += p.speed * dt;
   const sx = clamp(inp.sx || 0, -1, 1), sy = clamp(inp.sy || 0, -1, 1);
-  r.vx += (sx * 42 - r.vx) * Math.min(1, 6 * dt);
-  r.vy += (sy * 34 - r.vy) * Math.min(1, 6 * dt);
+  // banked into the slide (wheel or bank button), it slides faster: a tight turn
+  const lean = clamp(p.bank / 1.3, -1, 1);
+  const tight = 1 + HANDLING.bankBoost * Math.max(0, sx * lean > 0 ? Math.abs(lean) : 0);
+  r.vx += (sx * HANDLING.railX * tight - r.vx) * Math.min(1, HANDLING.railAccel * dt);
+  r.vy += (sy * HANDLING.railY - r.vy) * Math.min(1, HANDLING.railAccel * dt);
   // a roll is a sidestep too - kept apart from the stick's sliding so the
   // nose does not swing with it
   if(p.rollT > 0) r.side += p.rollDir * 48 * dt;
@@ -686,7 +816,7 @@ function flyRail(s, dt, inp){
   const floor = Math.max(RAIL_FLOOR, height(q.x, q.z) + 4);
   if(r.oy < floor){ r.oy = floor; r.vy = Math.max(0, r.vy); }
   // the wheel rolls the ship; sliding sideways leans it a little too
-  const bankT = clamp((inp.sr || 0) * 1.3 + r.vx / 42 * 0.35, -1.45, 1.45);
+  const bankT = clamp((inp.sr || 0) * 1.57 + r.vx / HANDLING.railX * 0.35, -1.6, 1.6);
   p.bank += (bankT - p.bank) * Math.min(1, 8 * dt);
   placeRail(s, dt);
 }
@@ -781,14 +911,16 @@ function flyFree(s, dt, inp){
       const toYaw = Math.atan2(-ax, az);
       sx = clamp(sx + clamp(wrap(toYaw - p.yaw) * 2, -1, 1) * home * 1.5, -1, 1);
     }
-    p.yaw += sx * 1.5 * dt;
-    if(Math.abs(sy) > 0.06) p.pitch += sy * 1.25 * dt;
+    const lean = clamp(p.bank / 1.3, -1, 1);
+    const tight = 1 + HANDLING.bankBoost * Math.max(0, sx * lean > 0 ? Math.abs(lean) : 0);
+    p.yaw += sx * HANDLING.levelTurn * tight * dt;
+    if(Math.abs(sy) > 0.06) p.pitch += sy * HANDLING.levelPitch * dt;
     else p.pitch -= p.pitch * Math.min(1, 0.6 * dt);     // let go and it levels out
     if(p.y > CEILING - 40) p.pitch = Math.min(p.pitch, -0.1);
     if(p.y < FLOOR + 40) p.pitch = Math.max(p.pitch, 0.1);
     p.pitch = clamp(p.pitch, -1.15, 1.15);
     // the roll is a lean: the wheel, plus a little into the turn
-    const bankT = clamp(sr * 1.3 + sx * 0.45, -1.45, 1.45);
+    const bankT = clamp(sr * 1.57 + sx * 0.45, -1.6, 1.6);
     p.bank += (bankT - p.bank) * Math.min(1, 6 * dt);
     levelFrame(p);
   } else {
@@ -800,7 +932,7 @@ function flyFree(s, dt, inp){
     }
     if(p.y > CEILING - 40 && f.y > 0) turnToward(f, norm({x: f.x, y: -0.3, z: f.z}), 1.0 * dt);
     if(p.y < FLOOR + 40 && f.y < 0) turnToward(f, norm({x: f.x, y: 0.3, z: f.z}), 1.0 * dt);
-    rot(f, u, null, sy * 1.55 * dt, sr * 2.6 * dt, sx * 1.3 * dt);
+    rot(f, u, null, sy * HANDLING.fullPitch * dt, sr * HANDLING.fullRoll * dt, sx * HANDLING.fullTurn * dt);
     p.fx = f.x; p.fy = f.y; p.fz = f.z; p.ux = u.x; p.uy = u.y; p.uz = u.z;
     p.yaw = Math.atan2(p.fx, -p.fz); p.pitch = Math.asin(clamp(p.fy, -1, 1));
     const rt = norm({x: -p.fz, y: 0, z: p.fx});
@@ -985,6 +1117,16 @@ function bolt(s, e, dir, dmg, from){
 }
 function distP(s, e){ const p = s.p; return len(p.x - e.x, p.y - e.y, p.z - e.z); }
 
+/* A mine: bobs where it was left, and goes off if anything comes close. */
+function mineAI(s, e, dt){
+  const p = s.p;
+  e.y += Math.sin(e.t * 1.1 + e.ph) * 2 * dt;
+  if(!p.dead && distP(s, e) < 11){
+    e.hp = 0; e.nokill = true;
+    ev(s, 'bomb', {x: e.x, y: e.y, z: e.z, r: 14});
+    if(p.hitT <= 0){ damage(s, 10, 'mine'); p.hitT = 0.5; }
+  }
+}
 function turretAI(s, e, dt){
   const p = s.p;
   // swivel to the ship
@@ -1059,7 +1201,7 @@ function steerSafe(s, e, d, look){
   if(ob && ob.type === 'spire'){ const a = norm({x: e.x - ob.x, y: 0, z: e.z - ob.z}); d = norm({x: d.x + a.x * 1.5, y: d.y + 0.6, z: d.z + a.z * 1.5}); }
   else if(ob && ob.type === 'rock'){ const a = norm({x: e.x - ob.x, y: e.y - ob.y, z: e.z - ob.z}); d = norm({x: d.x + a.x * 2, y: d.y + a.y * 2, z: d.z + a.z * 2}); }
   const rx = e.x - ARENA.x, rz = e.z - ARENA.z, r = Math.hypot(rx, rz);
-  if(r > ARENA_LIMIT - 180) d = norm({x: d.x - rx / r * 1.5, y: d.y, z: d.z - rz / r * 1.5});
+  if(s.mode === 'free' && r > ARENA_LIMIT - 180) d = norm({x: d.x - rx / r * 1.5, y: d.y, z: d.z - rz / r * 1.5});
   if(e.y > CEILING - 60) d = norm({x: d.x, y: Math.min(d.y, -0.2), z: d.z});
   if(e.y < FLOOR + 60) d = norm({x: d.x, y: Math.max(d.y, 0.2), z: d.z});
   return d;
@@ -1108,7 +1250,7 @@ function dogfight(s, e, dt){
   // guns
   e.fireT -= dt;
   const a = (dx * e.fx + dy * e.fy + dz * e.fz) / (dist || 1);
-  if(e.fireT <= 0 && a > 0.97 && dist < 400 && dist > 30){
+  if(e.fireT <= 0 && a > (e.type === 'dart' ? 0.97 : 0.94) && dist < (e.type === 'dart' ? 400 : 480) && dist > 30){
     if(e.burst <= 0) e.burst = e.type === 'dart' ? 2 : 3;
     e.burst--; e.fireT = e.burst > 0 ? 0.2 : (1.3 + s.rand()) * K.fire;
     bolt(s, e, aimAt(s, e, BOLT_SPEED * s.pace, p), 6);
@@ -1143,8 +1285,10 @@ function torpedo(s, e, dt){
   const p = s.p, planet = e.type === 'planet';
   e.life = (e.life == null ? 9 : e.life) - dt;
   const d = norm({x: p.x - e.x, y: p.y - e.y, z: p.z - e.z});
-  moveFwd(e, d, planet ? 0.3 : 0.62, e.speed * s.pace, dt);
-  if(distP(s, e) < e.r + 2.5){ e.hp = 0; e.nokill = true; if(p.hitT <= 0){ damage(s, planet ? 10 : 8, e.type); p.hitT = 0.4; } ev(s, 'boom', {x: e.x, y: e.y, z: e.z, big: planet}); }
+  moveFwd(e, d, planet ? 0.22 : 0.62, e.speed * s.pace, dt);
+  // a barrel roll bats a planet away
+  if(planet && p.rollT > 0 && distP(s, e) < e.r + 12){ e.hp = 0; e.nokill = true; ev(s, 'deflect', {x: e.x, y: e.y, z: e.z}); ev(s, 'boom', {x: e.x, y: e.y, z: e.z}); return; }
+  if(distP(s, e) < e.r + 2.5){ e.hp = 0; e.nokill = true; if(p.hitT <= 0){ damage(s, planet ? 8 : 8, e.type); p.hitT = 0.4; } ev(s, 'boom', {x: e.x, y: e.y, z: e.z, big: planet}); }
   if(e.life <= 0 || e.y < height(e.x, e.z) || (planet && hitObstacle(e.x, e.y, e.z, e.r))){ e.hp = 0; e.nokill = true; ev(s, 'boom', {x: e.x, y: e.y, z: e.z, big: planet}); }
 }
 
@@ -1203,7 +1347,7 @@ function allies(s, dt){
           d = norm({x: best.x + (best.vx || 0) * t - a.x, y: best.y + (best.vy || 0) * t - a.y, z: best.z + (best.vz || 0) * t - a.z});
           const al = (d.x * a.fx + d.y * a.fy + d.z * a.fz);
           a.fireT -= dt;
-          if(a.fireT <= 0 && al > 0.985 && distP2(a, best) < 380){ a.fireT = 0.35 + s.rand() * 0.3; allyShot(s, a, best); }
+          if(a.fireT <= 0 && al > 0.985 && distP2(a, best) < 380){ a.fireT = 0.6 + s.rand() * 0.5; allyShot(s, a, best); }
           if(distP2(a, best) < 60) d = norm({x: d.x + a.fy, y: d.y + 0.8, z: d.z - a.fx});
         } else {
           // nothing to chase: fly loose formation off Teddy's wing
@@ -1254,8 +1398,11 @@ function hurtEnemy(s, e, n, x, y, z, by){
   if(e.hp > 0) return;
   const big = e.type === 'boss' || e.type === 'part' || e.type === 'mittensShip';
   ev(s, 'boom', {x: e.x, y: e.y, z: e.z, big, type: e.type, kind: e.kind});
+  if(e.secret){ secretStep(s, 1); if(s.secret && !s.secret.done) say(s, 'rosie', `Radar buoy down - ${s.secret.got} of ${s.secret.need}.`, 1.6); return; }
+  if(e.type === 'mine'){ ev(s, 'bomb', {x: e.x, y: e.y, z: e.z, r: 14}); return; }
   if(e.type === 'cage'){
     s.stats.rescued++;
+    if(s.secret && s.secret.type === 'pups') secretStep(s, 1);
     ev(s, 'rescue', {x: e.x, y: e.y, z: e.z});
     if(e.rescue) addAlly(s, e.rescue);
     else if(s.stats.rescued % 2 === 1) say(s, 'teddy', ['Go on, pups - run home!', 'You are free, little guy!', 'Out you come!'][s.stats.rescued % 3], 1.8);
@@ -1285,7 +1432,7 @@ function projectiles(s, dt){
     for(let pass = 0; pass < 2 && b.life > 0; pass++) for(const e of s.enemies){
       if(e.x < -9e4 || !!e.shielded !== (pass === 1)) continue;
       const r = e.r + 0.8;
-      if(segDist2(b.x, b.y, b.z, nx, ny, nz, e.x, e.y, e.z) < r * r){ if(!b.ally && !e.shielded) s.stats.hits++; hurtEnemy(s, e, 1, nx, ny, nz, b.ally); b.life = 0; break; }
+      if(segDist2(b.x, b.y, b.z, nx, ny, nz, e.x, e.y, e.z) < r * r){ if(!b.ally && !e.shielded) s.stats.hits++; hurtEnemy(s, e, b.ally ? ALLY_DMG : 1, nx, ny, nz, b.ally); b.life = 0; break; }
     }
     // Teddy's shots can hit a wingmate. They will mention it.
     if(b.life > 0 && !b.ally) for(const a of s.allies){
@@ -1362,12 +1509,13 @@ function pickups(s, dt){
   for(const k of s.pickups){
     if(k.taken) continue;
     k.t += dt;
-    if(len(k.x - p.x, k.y - p.y, k.z - p.z) < 8 && !p.dead){
+    if(len(k.x - p.x, k.y - p.y, k.z - p.z) < (k.type === 'ring' ? 13 : PICKUP_R) && !p.dead){
       k.taken = true;
       if(k.type === 'bone') { p.shield = Math.min(100, p.shield + 30); for(const a of s.allies) if(!a.gone) a.hp = Math.min(100, a.hp + 20); say(s, 'teddy', 'Mmm, bone. Shields up!', 1.8); }
       else if(k.type === 'gold') { s.stats.gold++; say(s, 'teddy', 'Golden bone! ' + s.stats.gold + ' of ' + s.stats.goldTotal + '.', 2); }
       else if(k.type === 'ball') { p.twin = true; say(s, 'teddy', 'BALL! Twin lasers!', 2); }
       else if(k.type === 'bomb') { p.bombs = Math.min(9, p.bombs + 2); say(s, 'teddy', 'Two more bombs.', 1.6); }
+      else if(k.type === 'ring') { secretStep(s, 1); }
       ev(s, 'pickup', {type: k.type, x: k.x, y: k.y, z: k.z});
     }
   }
@@ -1377,12 +1525,14 @@ function pickups(s, dt){
    Flies the level the way a player would, from what a player could see.
    simcheck.mjs uses it to say whether the level is fair; ?auto=1 on the
    page lets it fly for you. skill 0..1: how quick and how accurate. */
-export function autopilot(s, skill){
+export function autopilot(s, skill, opts){
   skill = skill == null ? 0.8 : skill;
+  s.apSecret = opts && opts.secret != null ? opts.secret : skill >= 0.8;
   const p = s.p, inp = {sx: 0, sy: 0, sr: 0, fire: false, boost: false, brake: false, bomb: false, roll: 0, loop: false, uturn: false};
   if(p.dead || s.phase === 'won') return inp;
   const r = s.rand;   // shares the game's dice so a run is repeatable
   // a dodge, if something is about to hit
+  for(const e of s.enemies) if(e.type === 'planet' && distP(s, e) < 60 && r() < skill * 0.2){ inp.roll = r() < 0.5 ? -1 : 1; break; }
   for(const b of s.bolts){
     const dx = p.x - b.x, dy = p.y - b.y, dz = p.z - b.z, d = len(dx, dy, dz);
     if(d < 45 * s.pace && (dx * b.vx + dy * b.vy + dz * b.vz) / (d * BOLT_SPEED * s.pace) > 0.97 && r() < skill * 0.5){ inp.roll = r() < 0.5 ? -1 : 1; break; }
@@ -1412,7 +1562,8 @@ function railPilot(s, inp, skill){
     const f = railFrame(R.u);
     const ahead = (e.x - p.x) * f.tx + (e.z - p.z) * f.tz;
     if(ahead < 40 || ahead > 420) continue;
-    if(ahead < bd){ bd = ahead; best = e; }
+    const score = ahead - (s.apSecret && e.type === 'buoy' ? 300 : 0);   // hunting the secret: buoys first
+    if(score < (best ? best.score : 1e9)){ bd = ahead; best = e; best.score = score; }
   }
   if(best){
     const f = railFrame(R.u);
@@ -1431,6 +1582,17 @@ function railPilot(s, inp, skill){
       tox = (k.x - f.x) * f.rx + (k.z - f.z) * f.rz; toy = k.y; break;
     }
   }
+  // the secret: rings to fly through, a fork to take
+  let ringNear = false;
+  if(s.apSecret){
+    const ring = s.pickups.find(k => !k.taken && k.type === 'ring' && k.u > R.u + 10 && k.u < R.u + 260);
+    ringNear = !!ring && ring.u < R.u + 150;
+    if(ring){ const f = railFrame(R.u); tox = (ring.x - f.x) * f.rx + (ring.z - f.z) * f.rz; toy = ring.y; }
+    const F = s.L.fork;
+    if(F && !s.forkDecided && R.u > F.u0 - 300) tox = F.side * (halfW(R.u) - WALL_MARGIN - 3);
+  } else if(s.L.fork && !s.forkDecided && R.u > s.L.fork.u0 - 300) tox = -s.L.fork.side * 10;   // stay in the main channel
+  // a snowball rolling at us: get over it
+  if(s.boss && s.boss.kind === 'snowball' && s.boss.ru - R.u < 140) toy = RAIL_TOP - 3;
   // the rocks come first
   for(const o of OBSTACLES){
     const ahead = o.u - R.u;
@@ -1451,11 +1613,11 @@ function railPilot(s, inp, skill){
   // lightning rings and catnip clouds
   for(const h of s.hazards){
     const ahead = lateralAhead(s, h);
-    if(h.kind === 'strike' && !h.done){ const lat = railLat({x: h.x, z: h.z, u: -h.z}); if(Math.abs(tox - lat) < h.r + 8) tox = lat + (tox >= lat ? 1 : -1) * (h.r + 10); }
+    if(h.kind === 'strike' && !h.done && !ringNear){ const lat = railLat({x: h.x, z: h.z, u: -h.z}); if(Math.abs(tox - lat) < h.r + 8) tox = lat + (tox >= lat ? 1 : -1) * (h.r + 10); }
     if(h.kind === 'nip' && ahead > -10 && ahead < 200){ const lat = railLat({x: h.x, z: h.z, u: -h.z}); if(Math.abs(tox - lat) < h.r + 8 && Math.abs(toy - h.y) < h.r + 8) toy = h.y + (toy >= h.y ? 1 : -1) * (h.r + 10); }
   }
   const lim = halfW(R.u) - WALL_MARGIN;
-  tox = clamp(tox, -lim, lim); toy = clamp(toy, RAIL_FLOOR + 3, RAIL_TOP - 2);
+  tox = clamp(tox, -lim, lim); toy = clamp(toy, RAIL_FLOOR + (best && best.type === 'buoy' ? 0 : 3), RAIL_TOP - 2);
   const jit = (1 - skill) * 4;
   inp.sx = clamp((tox - R.ox) * 0.09 * (0.6 + skill * 0.6) - R.vx * 0.02 + (s.rand() - 0.5) * jit * 0.05, -1, 1);
   inp.sy = clamp((toy - R.oy) * 0.09 * (0.6 + skill * 0.6) - R.vy * 0.02, -1, 1);

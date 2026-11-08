@@ -36,6 +36,10 @@
   #b-centre { left: 50%; margin-left: 28px; font-size: 9px; width: 54px; }
   body.target-on #b-target { background: rgba(255,90,70,0.45); }
   body:not(.free) .freeonly { display: none; }
+  #b-bankL, #b-bankR { width: 62px; height: 62px; font-size: 28px; border-color: rgba(200,160,255,0.8); }
+  #b-bankL { left: calc(30px + var(--sl)); bottom: calc(200px + var(--sb)); }
+  #b-bankR { right: calc(118px + var(--sr)); bottom: calc(146px + var(--sb)); }
+  body:not(.nowheel) .bank { display: none; }
   body.desktop #controls .btn:not(#b-pause) { opacity: 0.45; }
 
   /* ---- screens ---- */
@@ -114,6 +118,8 @@
   <div class="btn" id="b-fire" data-btn="fire">FIRE</div>
   <div class="btn" id="b-bomb" data-btn="bomb">BOMB</div>
   <div class="btn freeonly" id="b-target" data-btn="target">TARGET</div>
+  <div class="btn bank" id="b-bankL" data-btn="bankL">&#8634;</div>
+  <div class="btn bank" id="b-bankR" data-btn="bankR">&#8635;</div>
 </div>
 
 <div class="screen" id="loading">LOADING…</div>
@@ -149,6 +155,9 @@
       <button class="chip" data-opt="pace" data-v="1.5">1.5×</button>
       <button class="chip" data-opt="pace" data-v="1.75">1.75×</button>
       <button class="chip" data-opt="pace" data-v="2">2×</button></div>
+    <div class="row"><label>Wheel</label>
+      <button class="chip" data-opt="wheel" data-v="on">Turning the phone rolls</button>
+      <button class="chip" data-opt="wheel" data-v="off">Off - bank buttons</button></div>
     <div class="row"><label>Tilt</label>
       <button class="chip" data-opt="sens" data-v="0.75">Gentle</button>
       <button class="chip" data-opt="sens" data-v="1">Normal</button>
@@ -220,6 +229,9 @@
       <button class="chip" data-opt="pace" data-v="1.5">1.5×</button>
       <button class="chip" data-opt="pace" data-v="1.75">1.75×</button>
       <button class="chip" data-opt="pace" data-v="2">2×</button></div>
+    <div class="row"><label>Wheel</label>
+      <button class="chip" data-opt="wheel" data-v="on">Turning the phone rolls</button>
+      <button class="chip" data-opt="wheel" data-v="off">Off - bank buttons</button></div>
     <div class="row"><label>Tilt</label>
       <button class="chip" data-opt="sens" data-v="0.75">Gentle</button>
       <button class="chip" data-opt="sens" data-v="1">Normal</button>

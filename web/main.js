@@ -23,23 +23,29 @@ const touch = matchMedia('(pointer: coarse)').matches;
 if(!touch) document.body.classList.add('desktop');
 
 /* ---------- settings, kept on this device ---------- */
-const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon', pace: '1.25'};
+const S = {skill: 'good', style: 'level', sens: '1', invert: false, start: 'canyon', pace: '1.25', wheel: 'on'};
 try { Object.assign(S, JSON.parse(localStorage.getItem('dogfight') || '{}')); } catch(e){}
 for(const k of ['skill', 'style', 'start', 'pace']) if(qs.get(k)) S[k] = qs.get(k);
 const save = () => { try { localStorage.setItem('dogfight', JSON.stringify(S)); } catch(e){} };
 const AUTO = qs.get('auto') === '1';
 
 /* ---------- the adventure so far ---------- */
-const fresh = () => ({flown: [], joined: ['wing1'], resting: {}, gold: {}, ranks: {}, finished: false});
+const fresh = () => ({flown: [], joined: ['wing1'], resting: {}, gold: {}, ranks: {}, finished: false, next: null, secrets: []});
 let G = fresh();
 try { const g = JSON.parse(localStorage.getItem('dogfight-save') || 'null'); if(g && g.flown) G = Object.assign(fresh(), g); } catch(e){}
 const saveG = () => { try { localStorage.setItem('dogfight-save', JSON.stringify(G)); } catch(e){} };
 /* The planets that can be flown next. */
+/* Where the adventure goes next. Like the old space shooters, it isn't a
+   menu choice: each planet has a secret (a hidden fork, every radar buoy,
+   every storm ring, every pup), and finding it sends you down the hard
+   route. G.next is set when a planet is won. */
 function nextLevels(){
   if(!G.flown.length) return [START];
+  if(G.next) return [G.next];
   const last = LEVELS[G.flown[G.flown.length - 1]];
-  return last ? last.next : [];
+  return last && last.next.normal ? [last.next.normal] : [];
 }
+const routeOf = L => [L.next.normal, L.next.secret].filter((n, i, a) => n && a.indexOf(n) === i);
 /* Who flies with Teddy: everyone who has joined, minus anyone resting. In
    free play, whoever would have joined by that point in the story. */
 function alliesFor(id, freePlay){
@@ -67,7 +73,8 @@ function paintChips(){
     const k = c.dataset.opt, v = c.dataset.v;
     c.classList.toggle('on', k === 'invert' ? !!S.invert : String(S[k]) === v);
   }
-  input.sens = +S.sens; input.invert = !!S.invert;
+  input.sens = +S.sens; input.invert = !!S.invert; input.wheel = S.wheel !== 'off';
+  document.body.classList.toggle('nowheel', S.wheel === 'off');
 }
 for(const c of document.querySelectorAll('.chip')) c.addEventListener('click', () => {
   const k = c.dataset.opt;
@@ -111,10 +118,11 @@ function showMap(){
   // the routes
   for(const id of ORDER){
     const L = LEVELS[id], [c, r] = MAP[id];
-    for(const n of L.next){
+    for(const n of routeOf(L)){
       const [c2, r2] = MAP[n];
       const flown = G.flown.includes(id) && (G.flown.includes(n) || nx.includes(n));
-      html += `<line x1="${X(c)}" y1="${Y(r)}" x2="${X(c2)}" y2="${Y(r2)}" stroke="${flown ? '#ffcf9a' : 'rgba(255,255,255,0.18)'}" stroke-width="${flown ? 3 : 2}" stroke-dasharray="${flown ? '' : '5 5'}"/>`;
+      const secret = n === L.next.secret && n !== L.next.normal;
+      html += `<line x1="${X(c)}" y1="${Y(r)}" x2="${X(c2)}" y2="${Y(r2)}" stroke="${flown ? (secret ? '#ff9a7a' : '#ffcf9a') : secret ? 'rgba(255,140,110,0.25)' : 'rgba(255,255,255,0.18)'}" stroke-width="${flown ? 3 : 2}" stroke-dasharray="${flown ? '' : secret ? '2 6' : '5 5'}"/>`;
     }
   }
   const colour = id => ({canyon: '#d06a3a', tidewater: '#2a8ac8', thunder: '#5a6a80', kennel: '#6a7ac0', frost: '#cfe8ff', jungle: '#4aa040', yarn: '#d060c0', moonfall: '#c8c4bc', scratchpost: '#7a3a5a', lair: '#a02040'})[id];
@@ -137,7 +145,8 @@ function showMap(){
     snd.sfx('click');
   });
   const rest = Object.keys(G.resting).filter(w => G.resting[w] > 0);
-  $('mapinfo').textContent = !nx.length ? 'Every planet is flown.' : rest.length ? `${rest.map(w => CAST[w].name).join(' and ')} ${rest.length > 1 ? 'are' : 'is'} home napping this mission. Tap a glowing planet.` : 'Tap a glowing planet.';
+  const hint = G.flown.length && G.secrets.includes(G.flown[G.flown.length - 1]) ? 'Secret route! ' : '';
+  $('mapinfo').textContent = !nx.length ? 'Every planet is flown.' : hint + (rest.length ? `${rest.map(w => CAST[w].name).join(' and ')} ${rest.length > 1 ? 'are' : 'is'} home napping this mission. ` : '') + `Next stop: ${LEVELS[nx[0]].name} - tap it.`;
   $('maptitle').textContent = G.flown.length ? `The Dog Star System · ${G.flown.length} of 7` : 'The Dog Star System';
 }
 
@@ -182,7 +191,7 @@ async function play(from){
   }
   const ok = await Input.ask();
   const startAt = from || (current.free ? S.start : 'canyon');
-  sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, start: startAt === 'arena' ? 'arena' : undefined,
+  sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, start: startAt === 'arena' ? 'arena' : undefined, hard: !current.free && G.secrets.length >= 2,
     seed: +qs.get('seed') || (Math.random() * 1e9) | 0, allies: alliesFor(current.id, current.free)});
   world.snap = true; view.target = null; document.body.classList.remove('target-on', 'free');
   hud.queue = []; hud.radio = null; hud.banner = null;
@@ -226,6 +235,8 @@ function finish(won){
   $('rank').textContent = won ? 'Rank: ' + rank : 'He\'s fine - he bailed out. Again?';
   const mm = Math.floor(st.time / 60), ss = Math.floor(st.time % 60);
   const rows = [['Time', mm + ':' + String(ss).padStart(2, '0')], ['Shot down', st.kills], ['Accuracy', acc + '%'], ['Golden bones', st.gold + ' / ' + st.goldTotal], ['Damage taken', Math.round(st.damage)]];
+  if(sim.secret) rows.push([sim.L.secret.label || 'Secret', sim.secret.done ? 'FOUND - hard route!' : sim.secret.type === 'fork' ? 'not found' : sim.secret.got + ' / ' + sim.secret.need]);
+  if(won && !current.free && !L.final) rows.push(['Next stop', LEVELS[sim.secret && sim.secret.done ? L.next.secret : L.next.normal].name]);
   if(st.rescued) rows.push(['Pups rescued', st.rescued]);
   if(st.saved) rows.push(['Wingmates saved', st.saved]);
   if(sim.downed.length) rows.push(['Gone home to nap', sim.downed.map(w => CAST[w].name).join(', ')]);
@@ -237,6 +248,9 @@ function finish(won){
     for(const w of sim.allies.map(a => a.id).concat(sim.joined)) if(!G.joined.includes(w) && !sim.downed.includes(w)) G.joined.push(w);
     for(const w of sim.downed){ if(!G.joined.includes(w)) G.joined.push(w); G.resting[w] = 1; }
     if(!G.flown.includes(current.id)) G.flown.push(current.id);
+    const secret = !!(sim.secret && sim.secret.done);
+    if(secret && !G.secrets.includes(current.id)) G.secrets.push(current.id);
+    G.next = secret ? L.next.secret : L.next.normal;
     G.gold[current.id] = Math.max(G.gold[current.id] || 0, st.gold);
     G.ranks[current.id] = rank;
     if(L.final) G.finished = true;
@@ -264,7 +278,10 @@ function ending(){
   };
   fin.ending = true;
   current = {id: 'lair', free: false};
-  brief('lair', L.ending, fin);
+  // the hard route earns a little more
+  const lines = L.ending.slice();
+  if(G.secrets.length >= 2) lines.splice(lines.length - 1, 0, ['hops', "Psst, {teddy}. You found the hard way through. I've built you something... for next time."], ['mittens', "...I'll be back. Cats ALWAYS land on their feet."]);
+  brief('lair', lines, fin);
   $('briefname').textContent = 'Epilogue';
   $('briefplanet').textContent = 'Dog Star System';
 }
@@ -321,6 +338,12 @@ function react(events){
         for(const [who, text] of sim.L.outro || []) hud.say(who, lineFor(text), Math.max(2.4, text.length / 20));
         break;
       case 'timeout': hud.show('THE MOON FELL', '', 3); break;
+      case 'secret': snd.cue('pickup'); hud.show('SECRET ROUTE!', 'The hard way is open', 3); break;
+      case 'secretStep': snd.sfx('pickup', null, 0.6); break;
+      case 'fork': snd.sfx('whoosh', null, 0.8); break;
+      case 'hiss': snd.sfx('shieldDown', at, 1); break;
+      case 'escaped': hud.show('IT GOT AWAY', '', 3); break;
+      case 'carried': snd.sfx('alarm', null, 0.6); break;
       case 'failed': snd.cue('gameover'); finish(false); break;
       case 'done': finish(true); break;
     }

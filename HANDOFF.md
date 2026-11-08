@@ -86,8 +86,20 @@ request; the first version steered with the steering-wheel turn):
   *rate* (2.6 rad/s at 32°), so you can roll right over.
 
 All three come from the whole orientation the phone reports, relative to
-the grip when it was CENTRED (`q0⁻¹ · q`, split as yaw about the screen's
-y, then pitch about x, then roll about z). Gravity alone cannot see the
+the grip when it was CENTRED (`q0⁻¹ · q`), split **roll first** (Euler
+order `ZYX`): the wheel turn about the screen's z, then the turn and the
+tip about the phone's own axes *as it is now rolled*. Until round 4 it was
+split yaw-first (`YXZ`), and Jon found that once the phone was rolled like
+a wheel, the other two went the wrong way: rolled 30°, "tip the top away"
+came out as part dive, part turn. With roll first, "pull the left side
+closer" and "tip the top away" mean the same thing however far over the
+wheel is. `playcheck` rolls the phone 30° and then steers to prove it.
+
+**Wheel setting** (title and pause, *Wheel on/off*). Off, turning like a
+wheel does nothing and two **BANK** buttons appear (left thumb, above the
+left buttons, and right thumb, above FIRE): hold one to lean full over
+that way (or roll, in full 3D). For anyone who still finds the wheel
+fighting the other two. Gravity alone cannot see the
 turn when the phone is upright, so the compass part is used, and it
 wanders slowly on some phones: while the turn is within 4° of centre it is
 bled away at 25% a second, and CENTRE resets everything. 2° dead zone,
@@ -119,14 +131,22 @@ U-TURN in the clearing. Right: FIRE, BOMB, TARGET in the clearing.
 
 ## Flying (`sim.js`)
 
+**Handling** is one table, `HANDLING` in `sim.js` (round 4, "more
+responsive, tighter turns"): rail slide 60 m/s sideways and 46 up/down,
+easing in at 9/s (was 42, 34, 6); level flying turns at 2.1 rad/s and
+pitches at 1.7 (was 1.5, 1.25); full 3D pitch 2.1, turn 1.8, roll 3.4.
+**Leaning into a turn tightens it**: leaning (wheel or BANK) the way the
+stick is pushing adds up to 60% (`bankBoost`) to the slide on the rail and
+the turn in level flying, like banking a plane. Leaning against it adds
+nothing.
+
 **The rail (the canyon).** The frame runs along the canyon's centre line
 by itself at 60 m/s (boost 100, brake 32). The stick moves the ship about a
-box in that frame: up to 42 m/s sideways and 34 m/s up/down, easing in at
-6/s. The box is the canyon floor's half width minus 13 m sideways, and 6 to
+box in that frame (see Handling above). The box is the canyon floor's half width minus 13 m sideways, and 6 to
 58 m up (and never below the ground + 4 m). The nose points along the
 ship's motion in the box, so the shots go where you are sliding: classic
-rail-shooter feel. The wheel leans the ship (plus a little lean from
-sliding sideways); it does not steer.
+rail-shooter feel. The wheel leans the ship up to 90° (plus a little lean from
+sliding sideways); on its own it does not steer, but it tightens a turn.
 
 **LOOP on the rail**: a somersault of radius 24 m in 1.9 s. The rail waits
 while the ship goes up, over (facing backwards at the top, so its shots go
@@ -165,26 +185,54 @@ leading it. Three bombs; the blue capsule gives two.
 
 ## The adventure (`levels.js`)
 
-Ten planets; a playthrough flies seven. After each, the map offers the
-next (the second of each pair is marked HARD):
+Ten planets; a playthrough flies seven. **The route is earned, not
+picked** (round 4, after the Star Fox 64 walkthroughs, where the path
+splits on what you do inside a level). Each early planet has a secret;
+find it and the next planet is the HARD one, miss it and it's the normal
+one. The map shows the open planet and the secret routes as dashed lines.
 
 ```
-Red Canyon -> Tidewater | Thunder Peaks -> The Kennel | Frost Fang
-           -> Catnip Jungle | Yarn Nebula -> Moonfall -> Scratchpost -> Mittens' Lair
+Red Canyon    -- take the left fork in the canyon -----------> Thunder Peaks, else Tidewater
+Tidewater     -- shoot all 8 sonar buoys on the sea ---------> Frost Fang,    else The Kennel
+Thunder Peaks -- fly through all 6 lightning rings ----------> Frost Fang,    else The Kennel
+The Kennel    -- open all 8 cages, rescue every pup ---------> Yarn Nebula,   else Catnip Jungle
+Frost Fang    -- take the right-hand ice cave ---------------> Yarn Nebula,   else Catnip Jungle
+then Moonfall -> Scratchpost -> Mittens' Lair
 ```
+
+Two or more secrets found makes it the **hard route**: the Alley Cats are
+waiting again in Mittens' Lair (`hardWaves`) and the ending has extra
+lines. The HUD counts the secret (e.g. "BUOYS 5/8", a ★ when done) and
+Rosie says when it's found. The save keeps `secrets` and `next`.
+
+**Forks** (`fork: {u0, u1, side, off, width}`): between u0 and u1 the rail
+has a second channel `off` m to one side (ramping out over 320 m). 110 m
+in, if the ship is more than 35% of the box out that side, it's committed:
+`BRANCH` (in `terrain.js`) flips to 1, the centre line, walls and box all
+follow the side channel, and script calls tagged `'alt'` run instead of
+`'main'`. The ship's offset is re-measured so nothing jumps.
+
+**Level shapes** — not every planet is canyon-then-clearing any more:
+
+| Shape | Planets | How |
+|---|---|---|
+| rail, then clearing | Red Canyon, Thunder Peaks, Catnip Jungle, Moonfall, Mittens' Lair | `railEnd`, `arenaU` |
+| **rail only, boss runs** | Tidewater | `arena: false`, `railChase {u, len}`: the carrier steams away up the rail; sink it in 4600 m or it escapes (a fail) |
+| **rail only, boss on the rail** | Frost Fang, Scratchpost | `railBossU`: the rail stops and the boss is fought in the box |
+| **clearing only** | The Kennel, Yarn Nebula | `start: 'arena'`: a free-flight fight from the first second |
 
 | # | Planet | Ground | What's new | Boss |
 |---|---|---|---|---|
 | 1 | Red Canyon | canyon | the basics | **The Brute**: two engine pods shield its core; torpedoes, bolt fans |
-| 2 | Tidewater | ocean | low over the sea, turrets on sea stacks; Pepper joins | **The Big Tabby**: a carrier; four deck guns, then the bridge; launches fighters |
-| 2 | Thunder Peaks (hard) | canyon, tall | lightning rings on the rail; Pepper joins | **The Storm Tower**: three lightning rods; strikes where you'll be |
-| 3 | The Kennel | space | asteroids; shoot open cages to rescue pups; Ziggy is in one | **The Warden**: four locks spinning round it |
-| 3 | Frost Fang (hard) | canyon, ice | ice spikes and arches; Ziggy found | **The Snowball**: four vents; fans of ice shards |
+| 2 | Tidewater | ocean, rail only | low over the sea, turrets on sea stacks, sea mines, sonar buoys; Pepper joins | **The Big Tabby**: a carrier that runs; four guns aft, then the bridge; launches fighters. Catch it before it gets away |
+| 2 | Thunder Peaks (hard) | canyon, tall | lightning, lightning rings; Pepper joins | **The Storm Tower**: three lightning rods; strikes where you'll be, then fans of bolts |
+| 3 | The Kennel | space, clearing only | asteroids; shoot open cages to rescue pups; Ziggy is in one | **The Warden**: four locks spinning round it; it carries off unopened cages |
+| 3 | Frost Fang (hard) | canyon, ice, rail only | ice spikes and arches, an ice-cave fork; Ziggy found | **The Snowball**: rolls down the canyon at you — climb over it; four vents on its face |
 | 4 | Catnip Jungle | canyon, jungle | trees; catnip clouds turn your controls backwards | **Queen Nip**: five petals; puffs catnip at you |
-| 4 | Yarn Nebula (hard) | space | yarn balls; the Alley Cats taunt you | **The Alley Cats**: four aces, no shields, tougher and better shots |
+| 4 | Yarn Nebula (hard) | space, clearing only | yarn balls, mines; the Alley Cats taunt you | **The Alley Cats**: four aces, no shields, tougher and better shots |
 | 5 | Moonfall | space | two aces in the debris; a 150 s clock | **The Moon Engines**: four rockets on the Moon; the Moon falls if the clock runs out |
 | 6 | Scratchpost (hard) | trench | a trench of wall guns and beams; two aces | **The Fortress Core**, met on the rail (it stops): four spinning panels |
-| 7 | Mittens' Lair | space | a field of junk; aces | **Emperor Mittens**: two paws swat when you're close, planets batted at you; then the face breaks and she flees in a tiny ship: catch her |
+| 7 | Mittens' Lair | space | a field of junk, mines; aces (and the Alley Cats again on the hard route) | **Emperor Mittens**: two paws swat when you're close, planets batted at you (roll to bat them back); her face is only open while her **mouth** is open (every 7 s, for 3.5 s, with a hissed fan of bolts); then the face breaks and she flees in a tiny ship: catch her |
 
 Then the epilogue: she's in an escape pod that Ziggy reprogrammed to fly
 her to the vet.
@@ -214,8 +262,13 @@ Brute's torpedoes, launched fighters, lightning strikes, catnip puffs,
 batted planets, swatting paws, the carrier's and the Moon's guns.
 
 **Hazards**: lightning (a glowing column marks where it'll hit in 1.3 s; 8
-damage), catnip clouds (3.5 s of backwards controls), Mittens' planets (10
-damage, shootable).
+damage), catnip clouds (3.5 s of backwards controls), Mittens' planets (8
+damage, shootable, a barrel roll bats them away), mines (blow up within
+11 m for 10 damage; shot, they burst like a bomb and take enemies with
+them).
+
+**Wingmates hit for half** (`ALLY_DMG = 0.5`) and fire every 0.6–1.1 s:
+at full strength they won Yarn Nebula for you.
 
 **Enemies in the clearing** fly a real dogfight: chase with lead, overshoot
 inside 85 m and extend away, jink when you sit on their tail, fire bursts
@@ -231,8 +284,10 @@ enemy toughness ×0.8 / ×1 / ×1.25, dogfighter speed and turn ×0.8 / ×1 /
 **What simcheck says today** (three games per planet, 1.25×, the computer
 tapping about six times a second like a person): a sharp pilot wins every
 planet on Good Boy (at least 2 of 3, mostly 3 of 3); a sloppy one wins
-every planet on Pup. On Top Dog a sharp pilot wins 2 of 9 (canyon,
-thunder, lair). Full 3D wins 9 of 9. Things found and fixed on the way:
+every planet on Pup. On Top Dog a sharp pilot wins 5 of 9 (canyon,
+thunder, lair). Full 3D wins 9 of 9. A pilot looking for secrets finds
+every one (the Kennel's pups only 1 of 3 — it's meant to be hard), and one
+that stays in the main channel never takes a fork by accident. Things found and fixed on the way:
 the pilot circled still bosses too tightly to aim (it now flies out and
 comes back on a run), chased Mittens' planets for minutes, dodged
 lightning so hard it never fired; the Scratchpost boss restarted after
@@ -295,6 +350,11 @@ tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
   own head in the cockpit; pointy-eared pets get wing tips that stand up.
 - **Weather**: rain and lightning (Thunder Peaks), snow (Frost Fang),
   spores (Catnip Jungle).
+- **Sizes** (round 4, "make my ship smaller so I can see more"): the
+  ship is drawn at 0.85 and the camera sits further back (`CAM` in
+  `world.js`: 25 m behind and 9 up on the rail, 24 and 6.5 in the chase
+  view), so Teddy is noticeably smaller on screen. Pickups are drawn
+  1.6× and caught within 11 m (rings 13).
 - A blob shadow under the ship (depth), dust when flying low, engine
   trails, speed specks in the air, a wider view on boost.
 - **The camera** (rewritten 2026-11-08 after "a noticeable jump" in rolls
@@ -316,8 +376,12 @@ tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
 ## Not built yet / open questions
 
 - **Nothing has been flown on a real phone** past the first two versions.
-  Tilt ranges (20° turn, 20° nose, 32° roll) and the speed are the first
-  things to tune by hand.
+  Tilt ranges (20° turn, 20° nose, 32° roll), `HANDLING` and the speed are
+  the first things to tune by hand. Whether Wheel on (now roll-first) is
+  good enough to drop the BANK buttons is Jon's call.
+- **More secrets** later in the game (Moonfall, Scratchpost) and a warp
+  like Sector X's; medals for hitting a kill count.
+- Frost Fang is heavy to draw (about 330k triangles with the cave fork).
 - **The pets**: placeholders until `cast.js` is filled in.
 - **Balance by hand**: the checks prove every level can be won, not that
   each is fun. Scratchpost and Moonfall look easy for the computer.

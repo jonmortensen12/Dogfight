@@ -45,13 +45,13 @@ for(const id of ORDER){
 }
 
 function allies(id){ const n = LEVELS[id].n; return WINGS.filter((w, i) => n >= [1, 3, 4][i]); }
-function run(id, skill, style, pilot, seed, pace, start){
+function run(id, skill, style, pilot, seed, pace, start, secret){
   const s = newSim({level: id, skill, style, seed, pace: pace || 1.25, start, allies: allies(id)});
   const dt = 1 / 60;
   let t = 0, crashes = 0, railT = null, railShield = null, nan = false;
   const seen = {join: 0, help: 0, rescue: 0, faces: 0, timeout: 0};
   while(t < 900 && !s.done && !s.failed){
-    step(s, dt, autopilot(s, pilot));
+    step(s, dt, autopilot(s, pilot, secret == null ? undefined : {secret}));
     for(const e of s.events){
       if(e.k === 'hurt' && e.why === 'crash') crashes++;
       if(e.k in seen) seen[e.k]++;
@@ -62,7 +62,7 @@ function run(id, skill, style, pilot, seed, pace, start){
     if(railT == null && (s.mode === 'free' || s.phase === 'railboss')){ railT = t; railShield = s.p.shield; }
     if(!Number.isFinite(s.p.x + s.p.y + s.p.z + s.p.fx + s.p.ux)){ nan = true; break; }
   }
-  return {won: s.done, t, railT, railShield, shield: s.p.shield, kills: s.stats.kills, crashes, nan, seen, s,
+  return {won: s.done, t, railT, secret: s.secret && s.secret.done, branch: s.forkDecided && s.L.fork ? (s.secret && s.secret.done ? 'alt' : 'main') : null, railShield, shield: s.p.shield, kills: s.stats.kills, crashes, nan, seen, s,
     acc: s.stats.shots ? s.stats.hits / s.stats.shots : 0, why: s.failWhy, saved: s.stats.saved, rescued: s.stats.rescued, allies: s.allies.filter(a => !a.gone).map(a => a.id)};
 }
 const fmt = r => `${r.won ? 'WON ' : 'lost'} ${r.t.toFixed(0)} s (rail ${r.railT ? r.railT.toFixed(0) + ' s, shield ' + r.railShield.toFixed(0) : '-'}), shield ${r.shield.toFixed(0)}, ${r.kills} down, ${r.crashes} bumps, acc ${(r.acc * 100).toFixed(0)}%${r.why && !r.won ? ', ' + r.why : ''}`;
@@ -90,6 +90,17 @@ ok(top.filter(r => !r.won).length >= 3, 'Top Dog is not a walkover (the sharp pi
 const full = ['canyon', 'yarn', 'lair'].flatMap(id => SEEDS.map(seed => run(id, 'good', 'full', 0.85, seed)));
 console.log('    Full 3D, sharp pilot, Good Boy (canyon, yarn, lair): ' + full.map(r => r.won ? 'W' : 'l').join(''));
 ok(full.filter(r => r.won).length >= 5, 'full-3D flying is winnable (at least 5 of 9)');
+
+console.log('\nThe secret routes');
+for(const id of ORDER){
+  const L = LEVELS[id];
+  if(!L.secret) continue;
+  const seek = SEEDS.map(seed => run(id, 'good', 'level', 0.85, seed, 1.25, undefined, true));
+  const skip = SEEDS.map(seed => run(id, 'good', 'level', 0.85, seed, 1.25, undefined, false));
+  const found = seek.filter(r => r.secret).length, stray = skip.filter(r => r.secret).length;
+  ok(found >= 1 && seek.some(r => r.won && r.secret) && (L.secret.type !== 'fork' || stray === 0),
+    `${L.name}: the secret (${L.secret.type}) is found by a pilot looking for it (${found} of 3, ${seek.filter(r => r.won && r.secret).length} won)` + (L.secret.type === 'fork' ? `, and never by one who stays in the main channel` : '') + ` -> ${L.next.secret}, else ${L.next.normal}`);
+}
 
 console.log('\nThe story happens');
 const R = id => results[id].sharp.concat(results[id].sloppy);

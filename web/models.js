@@ -247,6 +247,19 @@ export function buildEnemy(e, glow){
     add(new THREE.SphereGeometry(0.35, 10, 8), glowMat(0x7ad040, 4), 0, 0.4, 2.6);
     eng(0xd070ff, 4, 0, 0, -3.2);
     g.scale.setScalar(1.6);
+  } else if(type === 'mine'){
+    // a floating mine: a ball of spikes with a blinking light
+    add(new THREE.SphereGeometry(2.2, 14, 10), dark);
+    for(let i = 0; i < 10; i++){ const a = i * 2.4, b = Math.acos(1 - 2 * (i + 0.5) / 10); const sp = add(new THREE.ConeGeometry(0.5, 2, 6), hull, Math.sin(b) * Math.cos(a) * 2.4, Math.cos(b) * 2.4, Math.sin(b) * Math.sin(a) * 2.4); sp.lookAt(sp.position.clone().multiplyScalar(3)); sp.rotateX(Math.PI / 2); }
+    g.userData.pulse = eng(0xff3030, 5, 0, 0, 0);
+  } else if(type === 'buoy'){
+    // a Hiss radar buoy, bobbing: a float, a mast, a spinning dish, a blinking light
+    add(new THREE.CylinderGeometry(2.6, 3.2, 3, 12), std(0xd84a2a, 0.3, 0.6), 0, -1, 0);
+    add(new THREE.CylinderGeometry(0.3, 0.3, 6, 6), dark, 0, 2.5, 0);
+    const dish = add(new THREE.SphereGeometry(2.2, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.4), hull, 0, 5.5, 0, Math.PI / 2.4);
+    g.userData.dish = dish;
+    add(new THREE.ConeGeometry(0.5, 1.2, 4), dark, 0.6, 7, 0, 0, 0, -0.3); add(new THREE.ConeGeometry(0.5, 1.2, 4), dark, -0.6, 7, 0, 0, 0, 0.3);
+    g.userData.pulse = eng(0xff3030, 4, 0, 6.5, 0);
   } else if(type === 'part'){
     buildPart(e.kind, g, add, hull, dark, eng, glow);
   } else if(type === 'boss'){
@@ -399,6 +412,10 @@ function buildBossBody(kind, g, add, hull, dark, eng, glow, flash){
       for(const dy of [-2, 1, 4]){ const w = add(new THREE.CylinderGeometry(0.25, 0.25, 30, 4), white, s * 22, -8 + dy, 24); w.rotation.z = Math.PI / 2 + s * dy * 0.05; }
     }
     add(new THREE.SphereGeometry(3, 10, 8), std(0xf08aa0, 0, 0.5), 0, -3, 28).scale.set(1.2, 0.8, 0.8);
+    // the mouth: shut, until she opens it to hiss (then it glows: hit it)
+    const mouth = add(new THREE.SphereGeometry(9, 18, 12), glowMat(0xff3060, 1.6), 0, -15, 21);
+    mouth.scale.set(1.3, 0.04, 0.5);
+    g.userData.mouth = mouth;
     const gold = std(0xe8b830, 0.9, 0.25);
     add(new THREE.CylinderGeometry(16, 17, 8, 14, 1, true), gold, 0, 30, -2);
     for(let i = 0; i < 7; i++){ const a = i / 7 * Math.PI * 2; add(new THREE.ConeGeometry(2.5, 8, 4), gold, Math.cos(a) * 16.5, 37, Math.sin(a) * 16.5 - 2); }
@@ -417,6 +434,12 @@ export function buildPickup(type, glow){
     add(new THREE.CylinderGeometry(0.45, 0.45, 3.2, 12), m, 0, 0, 0, 0, 0, Math.PI / 2);
     for(const x of [-1.7, 1.7]) for(const y of [-0.45, 0.45]) add(new THREE.SphereGeometry(0.62, 12, 10), m, x, y, 0);
     sp.material.color = hot(type === 'gold' ? 0xffb020 : 0x9fffc0, 1.2);
+  } else if(type === 'ring'){
+    // a storm ring: fly through it
+    g.remove(sp);
+    add(new THREE.TorusGeometry(6, 0.5, 8, 40), glowMat(0x9ad0ff, 2.6));
+    add(new THREE.TorusGeometry(6.8, 0.15, 6, 40), glowMat(0xffffff, 2));
+    g.userData.ring = true;
   } else if(type === 'ball'){
     add(new THREE.SphereGeometry(1.6, 20, 16), std(0xd6f03a, 0, 0.8, {emissive: 0x304000}));
     const seam = add(new THREE.TorusGeometry(1.62, 0.08, 6, 40), new THREE.MeshBasicMaterial({color: 0xffffff}), 0, 0, 0, 0.6, 0.3, 0);

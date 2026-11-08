@@ -8,7 +8,7 @@
    meshes - strips along the rail, a grid for the clearing - coloured from
    the theme's palette. */
 import * as THREE from 'three';
-import {groundAt, height, halfW, rimH, railFrame, fbm, vnoise, OBSTACLES, archUnder, spireTop, GROUND, L, RAIL_END, ARENA, ARENA_U, ARENA_R} from './terrain.js';
+import {groundAt, height, halfW, rimH, railFrame, fbm, vnoise, OBSTACLES, archUnder, spireTop, GROUND, L, RAIL_END, ARENA, ARENA_U, ARENA_R, setBranch} from './terrain.js';
 import {hot} from './models.js';
 
 export const NOISE = `
@@ -188,7 +188,7 @@ function finishGeo(pos, col, uv, idx){
   return geo;
 }
 /* Strips along the rail, sampled finely where the walls are. */
-function railChunk(u0, u1){
+function railChunk(u0, u1, reach){
   const rows = Math.ceil((u1 - u0) / 3);
   const lat = [];
   for(let i = 0; i <= 8; i++) lat.push(['f', i / 8]);
@@ -199,7 +199,7 @@ function railChunk(u0, u1){
     for(const [k, t] of lat){
       if(k === 'f') o.push(t * (w - 12));
       else if(k === 'w') o.push(w - 12 + t * 48);
-      else o.push(w + 36 + Math.pow(t, 1.6) * (GROUND === 'ocean' ? 600 : 300));
+      else o.push(w + 36 + Math.pow(t, 1.6) * (reach || (GROUND === 'ocean' ? 600 : 300)));
     }
     return o.slice(1).reverse().map(v => -v).concat(o);
   };
@@ -476,11 +476,22 @@ export function buildScenery(def, renderer){
   // the ground
   const groundMat = new THREE.MeshLambertMaterial({vertexColors: true, map: GRAIN});
   if(GROUND !== 'space'){
-    const end = def.arena === false ? (def.railBossU || RAIL_END) + 420 : RAIL_END + 40;
+    const end = def.railChase ? def.railChase.u + def.railChase.len + 400 : def.arena === false ? (def.railBossU || RAIL_END) + 420 : RAIL_END + 40;
     for(let u = -200; u < end; u += 150){
       const m = new THREE.Mesh(railChunk(u, Math.min(u + 150, end)), groundMat);
       m.userData.u = u;
       group.add(m); out.chunks.push(m);
+    }
+    // a fork: the other channel gets its own fine strips, drawn over the main ones
+    if(def.fork){
+      const forkMat = new THREE.MeshLambertMaterial({vertexColors: true, map: GRAIN, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+      setBranch(1);
+      for(let u = def.fork.u0; u < def.fork.u1; u += 150){
+        const m = new THREE.Mesh(railChunk(u, Math.min(u + 150, def.fork.u1), 60), forkMat);
+        m.userData.u = u;
+        group.add(m); out.chunks.push(m);
+      }
+      setBranch(0);
     }
     if(def.arena !== false){
       out.arena = new THREE.Mesh(arenaGrid(-(RAIL_END - 160)), groundMat);

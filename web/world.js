@@ -11,7 +11,7 @@ import {EffectComposer} from './lib/postprocessing/EffectComposer.js';
 import {RenderPass} from './lib/postprocessing/RenderPass.js';
 import {UnrealBloomPass} from './lib/postprocessing/UnrealBloomPass.js';
 import {OutputPass} from './lib/postprocessing/OutputPass.js';
-import {height, railPoint, GROUND, RAIL_END} from './terrain.js';
+import {height, railPoint, railFrame, GROUND, RAIL_END} from './terrain.js';
 import {hot, buildPetShip, buildEnemy, buildPickup} from './models.js';
 import {buildScenery, NOISE} from './scenery.js';
 import {CAST} from './cast.js';
@@ -135,6 +135,11 @@ class Particles {
 const beamGeo = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _cp = new THREE.Vector3(), _cl = new THREE.Vector3();
+/* How big Teddy's ship looks: it is drawn a little smaller than life, and
+   the camera sits further back than it used to (2026-11-08: "make my ship
+   smaller on the screen so I can see what is happening"). */
+const SHIP_SCALE = 0.85;
+const CAM = {railBack: 25, railUp: 9, railLook: 60, chaseBack: 24, chaseUp: 6.5, chaseLook: 45};
 class Beam {
   constructor(scene, color, width){
     this.mat = new THREE.ShaderMaterial({vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
@@ -177,6 +182,7 @@ export class World {
 
     // Teddy
     this.ship = buildPetShip('teddy', glow);
+    this.ship.scale.setScalar(SHIP_SCALE);
     scene.add(this.ship);
     this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({map: shadowTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4}));
     scene.add(this.shadow);
@@ -425,6 +431,9 @@ export class World {
       }
       if(m.userData.core) m.userData.core.material.color.copy(hot(e.shielded ? 0x604050 : (m.userData.coreColor || 0xff4060), e.shielded ? 1 : 3 + Math.sin(this.time * 10)));
       if(m.userData.spinUp) m.userData.spinUp.rotation.y = -(e.spinA || 0);
+      if(e.roll) m.rotateX(-e.roll);
+      if(m.userData.mouth) m.userData.mouth.scale.y = 0.04 + 0.6 * (e.mouth || 0);
+      if(m.userData.dish) m.userData.dish.rotation.y = this.time * 3;
       if(e.type === 'cage') m.rotation.y = this.time * 0.6;
       if(e.type === 'boss' && e.kind === 'carrier' && Math.random() < 0.6) this.parts.emit(e.x - e.fx * 46 + (Math.random() - 0.5) * 20, 1, e.z - e.fz * 46 + (Math.random() - 0.5) * 20, 0, 2, 0, 0.8, 0.85, 0.9, 6, 2.5, 0.5, 2);
       // their engines leave a little trail
@@ -442,9 +451,15 @@ export class World {
       if(k.taken) continue;
       ps.add(k.id);
       let m = this.pickups.get(k.id);
-      if(!m){ m = buildPickup(k.type, this.glow); this.pickups.set(k.id, m); this.scene.add(m); }
-      m.position.set(k.x, k.y + Math.sin(this.time * 2 + k.id) * 0.6, k.z);
-      m.rotation.y = this.time * 2;
+      if(!m){ m = buildPickup(k.type, this.glow); m.scale.setScalar(1.6); this.pickups.set(k.id, m); this.scene.add(m); }
+      if(k.type === 'ring'){
+        // storm rings face along the rail
+        m.position.set(k.x, k.y, k.z);
+        const f = railFrame(k.u); m.rotation.set(0, Math.atan2(f.tx, f.tz), 0);
+      } else {
+        m.position.set(k.x, k.y + Math.sin(this.time * 2 + k.id) * 0.6, k.z);
+        m.rotation.y = this.time * 2;
+      }
     }
     for(const [id, m] of this.pickups) if(!ps.has(id)){ this.scene.remove(m); this.pickups.delete(id); }
 
@@ -611,9 +626,9 @@ export class World {
     } else {
       // the rail view (used as long as chaseW is below 1)
       const R = p.man && s.mode === 'rail' ? {u: p.man.u0, ox: p.man.ox0, oy: p.man.oy0} : p.rail;
-      const c = railPoint(R.u - 17, R.ox * 0.72, 0);
-      const railPos = new THREE.Vector3(c.x, R.oy * 0.85 + 6.5, c.z);
-      const l = railPoint(R.u + 45, R.ox * 0.85, 0);
+      const c = railPoint(R.u - CAM.railBack, R.ox * 0.72, 0);
+      const railPos = new THREE.Vector3(c.x, R.oy * 0.85 + CAM.railUp, c.z);
+      const l = railPoint(R.u + CAM.railLook, R.ox * 0.85, 0);
       const railLook = new THREE.Vector3(l.x, R.oy * 0.92 + 2, l.z);
       const railUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(p.fx, 0, p.fz).normalize(), -p.bank * 0.12);
       // once free of the rail, the rail view travels with the ship (as the
@@ -631,8 +646,8 @@ export class World {
         chaseLook = P.clone().addScaledVector(d, Math.min(dist * 0.5, 120));
         rate = 5;
       } else {
-        chasePos = P.clone().addScaledVector(fs, -17).addScaledVector(us, 5);
-        chaseLook = P.clone().addScaledVector(fs, 35);
+        chasePos = P.clone().addScaledVector(fs, -CAM.chaseBack).addScaledVector(us, CAM.chaseUp);
+        chaseLook = P.clone().addScaledVector(fs, CAM.chaseLook);
         rate = s.mode === 'free' ? 25 : 7;
       }
       const w = this.chaseW;

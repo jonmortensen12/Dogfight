@@ -40,6 +40,11 @@ canyon: {
   name: 'Red Canyon', planet: 'Rusthound', n: 1,
   blurb: 'The Hiss have dug in at the edge of home.',
   ground: 'canyon', railEnd: 3700, arenaU: 4250,
+  /* SECRET: past the two arches the canyon splits - the left-hand channel
+     is a dry riverbed, narrower, with gold in it, and it opens the hard
+     route (Thunder Peaks). Stay right for Tidewater. */
+  fork: {u0: 2600, u1: 3400, side: -1, off: 150, width: 32, say: ['wing1', 'The old riverbed! Rosie said nobody comes down here...']},
+  secret: {type: 'fork', need: 1, label: 'SECRET ROUTE', found: ['rosie', "You found the old riverbed! It comes out right under their noses. The hard route to Thunder Peaks is open!"]},
   path: {a: [70, 34, 12], l: [420, 170, 73], p: [0, 1.3, 0.4]},
   width: u => 50 + 12 * Math.sin(u / 260 + 0.5) - 16 * S(u, 1750, 1850) * (1 - S(u, 2150, 2250)) + 30 * S(u, 3300, 3650),
   rim: u => 88 + 14 * Math.sin(u / 600) + 20 * S(u, 3200, 3600),
@@ -53,6 +58,7 @@ canyon: {
     lay.spire(1900, 12, 6, 60), lay.spire(1990, -9, 6, 72), lay.spire(2080, 8, 6, 66),
     lay.arch(2420, 30, 12), lay.arch(2520, 38, 16),
     lay.spire(3000, 0, 9, 75),
+    ...lay.onFork(() => [lay.spire(2950, -6, 5, 50), lay.arch(3100, 26, 10), lay.spire(3250, 7, 5, 55)]),
     ...[[0.45, 140, 38, 150], [2.2, 330, 46, 190], [3.7, 250, 32, 120], [5.2, 380, 52, 210], [1.2, 420, 30, 135]].map(([a, r, rad, h]) =>
       lay.spireAt(lay.arenaX + Math.cos(a) * r, lay.arenaZ + Math.sin(a) * r, rad, h)),
   ],
@@ -76,8 +82,10 @@ canyon: {
     A.at(1700, () => { A.pickup('gold', 1990, 18, 12); A.say('wing1', "It's tight through the narrows. Keep your ears in.", 2.6); });
     A.at(2150, () => A.formation(5, 2580));
     A.at(2300, () => A.say('teddy', 'Arches! Stay low!', 2));
-    A.at(2550, () => { A.turret(2980, -1); A.turret(3000, 1); A.turret(3040, 1); A.turret(3070, -1); A.pickup('bomb', 2850, -12, 20); });
-    A.at(2700, () => A.pickup('gold', 2860, 22, 46));
+    A.at(2450, () => A.say('wing1', "Is that a side canyon over on the LEFT? Looks like an old riverbed...", 3));
+    A.at(2750, () => { A.turret(2980, -1); A.turret(3000, 1); A.turret(3040, 1); A.turret(3070, -1); A.pickup('bomb', 2850, -12, 20); }, 'main');
+    A.at(2750, () => A.pickup('gold', 2860, 22, 46), 'main');
+    A.at(2750, () => { A.formation(3, 3050); A.pickup('gold', 2900, 0, 14); A.pickup('bomb', 3000, 0, 20); }, 'alt');
     A.at(2950, () => A.swoop(4));
     A.at(3150, () => A.pickup('bone', 3320, 0, 20));
     A.at(3250, () => A.say('rosie', 'The canyon opens up ahead. Once you are out, you are free to fly - anywhere.', 3.8));
@@ -89,15 +97,21 @@ canyon: {
   ],
   boss: {type: 'brute', name: 'THE BRUTE', warn: ['rosie', 'Something big is coming over the ridge...'], escort: 2},
   outro: [['rosie', 'Red Canyon is clear! Mittens will not be happy.'], ['mittens', 'Hmph. Lucky dog. Enjoy it - I have SO many more things to knock over.']],
-  next: ['tidewater', 'thunder'],
+  next: {normal: 'tidewater', secret: 'thunder'},
   joins: ['wing1'],
 },
 
 /* ================================================================ 2a */
+/* All rail. Low over the sea, past sea stacks. SECRET: shoot all eight of
+   the Hiss's radar buoys bobbing on the water (fly low) - the hard route,
+   to Frost Fang. The boss is a chase: the Big Tabby carrier steams away
+   down the rail; take out its deck guns, then its bridge, before it gets
+   away. */
 tidewater: {
   name: 'Tidewater', planet: 'Splashdown', n: 2,
-  blurb: 'An ocean world. The Hiss have parked an aircraft carrier on it.',
-  ground: 'ocean', railEnd: 3300, arenaU: 3900, arenaR: 520,
+  blurb: 'An ocean world. Catch the Big Tabby before it gets away.',
+  ground: 'ocean', railEnd: 3300, arenaU: 99999, arena: false,
+  railChase: {u: 3300, len: 4600, escape: 'The Big Tabby got away!', say: ['mittens', 'Bye-bye, doggies! Full steam ahead!']},
   path: {a: [90, 40, 10], l: [500, 200, 80], p: [0.3, 0.8, 0]},
   width: u => 75 + 15 * Math.sin(u / 300),
   railTop: 60, railFloor: 7,
@@ -105,41 +119,43 @@ tidewater: {
     strata: [0x8a8478, 0x6e6a62, 0x9c968a, 0x7a746a, 0xa8a090], sand: 0xe8d6a8, scrub: 0x4a8a3a, wet: 0xb8a878, top: 0x5a9a42,
     water: 0x1a6a8a, ocean: true, planet: true},
   music: {rail: 'canyon', free: 'clearing', boss: 'boss'},
+  secret: {type: 'buoys', need: 8, label: 'RADAR BUOYS', found: ['rosie', "That's every radar buoy! They're blind - and I've found a back way to Frost Fang. Hard route, here we come!"]},
   obstacles: (lay, R) => [
     ...scatter(R, lay, 500, 3100, 140, (u, R) => lay.spire(u, (R() - 0.5) * 100, 6 + R() * 6, 40 + R() * 60, 'stack')),
     lay.arch(1400, 28, 16, 'stack'), lay.arch(2600, 32, 14, 'stack'),
+    ...scatter(R, lay, 3500, 7800, 260, (u, R) => lay.spire(u, (R() < 0.5 ? -1 : 1) * (45 + R() * 30), 6 + R() * 5, 30 + R() * 50, 'stack')),
   ],
   briefing: [
-    ['rosie', "The Hiss are on Tidewater. They've parked an aircraft carrier there - the Big Tabby."],
+    ['rosie', "The Hiss are on Tidewater, and their aircraft carrier - the Big Tabby - is about to leave port."],
     ['wing1', "Cats. On a boat. In the water. That's... brave of them."],
-    ['rosie', "We've also picked up a distress call. One of ours, fighting alone out there."],
-    ['teddy', 'Then let\'s go get them. Splash!'],
+    ['rosie', "Catch it before it gets away. And keep an eye on the water: the Hiss float radar buoys. Sink them ALL and they'll never see us coming."],
+    ['teddy', "Then let's go. Splash!"],
   ],
   script: A => {
-    A.at(150, () => A.say('rosie', 'Stay low over the waves - their radar cannot see you down there.', 3));
+    A.at(150, () => A.say('rosie', 'Radar buoys on the water - the blinking ones. Fly low and pop them!', 3));
+    A.at(200, () => { A.buoy(420, -20); A.buoy(700, 35); });
     A.at(300, () => A.formation(4, 760));
-    A.at(500, () => { A.turretOn(900); A.turretOn(1100); });
+    A.at(500, () => { A.turretOn(900); A.turretOn(1100); A.buoy(1050, -45); });
     A.at(800, () => A.say('wing2', "Is that the squadron? About time! I've been fighting these cats all morning!", 3.4));
-    A.at(900, () => { A.join('wing2'); A.swoop(3); });
+    A.at(900, () => { A.join('wing2'); A.swoop(3); A.buoy(1300, 30); });
     A.at(1000, () => A.pickup('ball', 1400, 0, 18));
     A.at(1250, () => A.say('wing2', "Pepper reporting! Point me at a cat!", 2.6));
-    A.at(1500, () => { A.cross(1900, 1, 26); A.cross(1960, -1, 34); A.formation(3, 1980); });
+    A.at(1500, () => { A.cross(1900, 1, 26); A.cross(1960, -1, 34); A.formation(3, 1980); A.buoy(1850, -55); });
     A.at(1700, () => A.pickup('bone', 1900, -20, 12));
-    A.at(2000, () => { A.turretOn(2300); A.turretOn(2400); A.turretOn(2450); });
+    A.at(2000, () => { A.turretOn(2300); A.turretOn(2400); A.turretOn(2450); A.buoy(2350, 50); });
     A.at(2100, () => A.pickup('gold', 2300, 40, 10));
-    A.at(2400, () => { A.formation(5, 2900); A.say('wing1', 'Big wave of them ahead!', 2); });
+    A.at(2400, () => { A.formation(5, 2900); A.say('wing1', 'Big wave of them ahead!', 2); A.buoy(2700, -10); });
     A.at(2700, () => A.pickup('gold', 2600, 0, 22));
-    A.at(2800, () => { A.swoop(3); A.pickup('bomb', 3050, 10, 20); });
-    A.at(3000, () => A.say('rosie', "Open water ahead. The carrier's out there somewhere.", 3));
+    A.at(2800, () => { A.swoop(3); A.pickup('bomb', 3050, 10, 20); A.buoy(3150, 40); });
+    A.at(3000, () => A.say('rosie', "There's the carrier - it's making a run for it! After it!", 3));
     A.at(3150, () => A.pickup('gold', 3250, -35, 45));
+    A.at(4300, () => A.pickup('bone', 4500, 0, 14));
+    A.at(5600, () => A.say('rosie', "Faster, {teddy}! It's nearly out of range!", 2.4));
   },
-  waves: [
-    {say: ['wing2', 'Fighters off the carrier! Get them!'], spawn: [{type: 'dart', n: 4}, {type: 'raider', n: 1, ang: 2.5}]},
-    {say: ['rosie', 'They keep coming!'], spawn: [{type: 'dart', n: 4, ang: 2.0}, {type: 'raider', n: 2, ang: -1.0}], help: 'wing2'},
-  ],
-  boss: {type: 'carrier', name: 'THE BIG TABBY', warn: ['rosie', "There she is - the carrier! Take out its deck guns, then hit the bridge!"], escort: 2},
+  waves: [],
+  boss: {type: 'carrier', name: 'THE BIG TABBY', warn: ['rosie', "Deck guns first, then the bridge - before it gets away!"], escort: 0},
   outro: [['wing2', 'Did you see me? I bit a battleship!'], ['rosie', 'Tidewater is safe. Welcome to the squadron, {wing2}.'], ['mittens', 'My BOAT. You sank my lovely boat. You will PAY for that, dogs.']],
-  next: ['kennel', 'frost'],
+  next: {normal: 'kennel', secret: 'frost'},
   joins: ['wing2'],
 },
 
@@ -156,6 +172,9 @@ thunder: {
     strata: [0x4a5048, 0x5a6258, 0x3e443c, 0x6a7064, 0x525a50], sand: 0x5a6a48, scrub: 0x3a5a30, wet: 0x30382a, top: 0x6a7a58,
     water: 0x3a4a50, rain: true, lightning: true},
   music: {rail: 'canyon', free: 'clearing', boss: 'boss'},
+  /* SECRET: six glowing storm rings hang high in the pass. Fly through
+     every one and the storm opens a way to Frost Fang (the hard route). */
+  secret: {type: 'rings', need: 6, label: 'STORM RINGS', found: ['rosie', "All six storm rings! The storm's opened a path - next stop, Frost Fang. Hard route!"]},
   obstacles: (lay, R) => [
     lay.spire(700, 15, 8, 110), lay.spire(780, -15, 8, 120),
     lay.arch(1150, 36, 16), lay.arch(1900, 32, 14),
@@ -176,6 +195,7 @@ thunder: {
     A.at(850, () => A.say('wing2', "Hey! Whoever you are - I could use a hand here!", 2.8));
     A.at(950, () => { A.join('wing2'); A.swoop(4); });
     A.at(1000, () => A.pickup('ball', 1150, 0, 18));
+    A.at(1100, () => { A.say('rosie', 'See those glowing rings, high up? Fly through every one - storm rings mean a way through.', 3.2); for(const [u, ox, y] of [[1300, -20, 50], [1500, 15, 48], [1700, 25, 44], [1950, -10, 46], [2150, 0, 48], [3000, -15, 46]]) A.pickup('ring', u, ox, y); });
     A.at(1300, () => A.say('wing2', "Pepper reporting! Point me at a cat! Not at the thunder!", 3));
     A.at(1400, () => { A.formation(5, 1850); A.cross(1900, 1, 30); });
     A.at(1700, () => { A.turret(2100, 1); A.turret(2150, -1); A.turret(2200, 1); A.pickup('bone', 2000, 0, 14); });
@@ -191,81 +211,79 @@ thunder: {
   ],
   boss: {type: 'tower', name: 'THE STORM TOWER', warn: ['rosie', 'The weather tower! Break its three lightning rods and the core will open!'], escort: 2},
   outro: [['teddy', 'The thunder stopped! ...I was never scared.'], ['wing2', 'You were a LITTLE scared.'], ['mittens', 'My beautiful storm! Fine. FINE. I have other toys.']],
-  next: ['kennel', 'frost'],
+  next: {normal: 'kennel', secret: 'frost'},
   joins: ['wing2'],
 },
 
 /* ================================================================ 3a */
+/* All-range: straight into the prison's asteroid field, round the station.
+   Two waves of guards, cages to shoot open, then the Warden. SECRET: free
+   every one of the eight pups before the Warden arrives (any still caged
+   are carried off) - the hard route, to the Yarn Nebula. */
 kennel: {
-  name: 'The Kennel', planet: 'Asteroid Pound', n: 3,
+  name: 'The Kennel', planet: 'Asteroid Pound', n: 3, start: 'arena',
   blurb: 'An asteroid prison where the Hiss keep captured pups.',
-  ground: 'space', railEnd: 3000, arenaU: 3700, arenaR: 600, arenaLimit: 760,
-  path: {a: [60, 30, 0], l: [400, 150, 100], p: [0, 2, 0]},
+  ground: 'space', railEnd: 200, arenaU: 900, arenaR: 600, arenaLimit: 760,
+  path: {a: [0, 0, 0], l: [400, 150, 100], p: [0, 0, 0]},
   width: u => 70,
   railTop: 70, railFloor: -50, ceiling: 380, floor: -380,
   theme: {kind: 'space', nebula: [[0.10, 0.25, 0.55], [0.35, 0.10, 0.45]], sunColor: 0xfff0e0, sun: [-0.5, 0.5, -0.7], fog: [600, 2400]},
   music: {rail: 'space', free: 'clearing', boss: 'boss'},
+  secret: {type: 'pups', need: 8, label: 'PUPS FREED', found: ['wing3', 'Every pup is out! And they told me a secret way into the Yarn Nebula. Hard route!']},
+  arenaPickups: [['gold', 0.8, 380, 60], ['gold', 3.2, 450, -120], ['gold', 4.9, 300, 150], ['ball', 0, 300, 0], ['bone', 2.2, 250, 40], ['bomb', 4.0, 330, -40]],
   obstacles: (lay, R) => [
-    ...scatter(R, lay, 300, 2900, 45, (u, R) => {
-      const side = R() < 0.5 ? -1 : 1, off = side * (20 + R() * 120), y = (R() - 0.5) * 140;
-      // keep the middle of the corridor mostly clear; the odd rock floats in
-      return lay.rock(u, R() < 0.12 ? (R() - 0.5) * 50 : off, R() < 0.12 ? (R() - 0.4) * 50 : y, 5 + R() * 18);
-    }),
-    // the prison station: a ring of modules round the clearing's middle
+    // the prison station: a ring of modules round the middle
     ...Array.from({length: 10}, (_, i) => { const a = i / 10 * Math.PI * 2; return lay.rockAt(lay.arenaX + Math.cos(a) * 160, 0, lay.arenaZ + Math.sin(a) * 160, 22, 'module'); }),
+    // and rocks everywhere else
+    ...Array.from({length: 46}, () => { const a = R() * 6.283, r = 260 + R() * 420; return lay.rockAt(lay.arenaX + Math.cos(a) * r, (R() - 0.5) * 500, lay.arenaZ + Math.sin(a) * r, 6 + R() * 22); }),
   ],
   briefing: [
     ['rosie', 'The Kennel: an asteroid prison. The Hiss lock up every pup they catch there.'],
-    ['rosie', "Get through the rocks, open the cages, and stop the Warden. And {teddy}... one of the prisoners is a pilot."],
+    ['rosie', "Open every cage you can - they'll haul the rest away when the Warden shows up. And {teddy}... one of the prisoners is a pilot."],
     ['wing2', "A JAILBREAK? Oh, I love a jailbreak."],
   ],
-  script: A => {
-    A.at(100, () => A.say('rosie', 'Asteroids! No ground here - you can go up and down as well.', 3));
-    A.at(250, () => A.formation(4, 700));
-    A.at(600, () => A.swoop(3));
-    A.at(800, () => A.pickup('bone', 1000, 0, 0));
-    A.at(1000, () => { A.formation(5, 1450); A.say('wing1', 'Rocks everywhere! Stay together!', 2.4); });
-    A.at(1300, () => { A.cross(1700, -1, 10); A.cross(1760, 1, -20); A.pickup('ball', 1600, 0, 5); });
-    A.at(1700, () => { A.swoop(4); A.pickup('gold', 1900, -40, 40); });
-    A.at(2000, () => A.formation(5, 2450));
-    A.at(2200, () => { A.pickup('bomb', 2400, 0, -10); A.pickup('gold', 2500, 45, -30); });
-    A.at(2400, () => A.swoop(3));
-    A.at(2700, () => { A.say('rosie', 'The station! The cages are round the outside - shoot them open!', 3.2); A.pickup('gold', 2800, -20, 30); });
-  },
   waves: [
-    {say: ['rosie', 'Shoot open the cages! And watch out for the guards!'], spawn: [{type: 'dart', n: 4}], cages: 6},
-    {say: ['wing3', "You came for me! Ziggy here - get me out of this cage and I'll get you through that Warden."], spawn: [{type: 'dart', n: 3, ang: 2}, {type: 'raider', n: 2, ang: -2}], cages: 1, rescue: 'wing3'},
+    {say: ['rosie', 'Shoot open the cages! And watch out for the guards!'], spawn: [{type: 'dart', n: 4}, {type: 'mine', n: 5, ang: 0.4, dist: 380, spread: 0.3}], cages: 4},
+    {say: ['wing3', "You came for me! Ziggy here - get me out of this cage and I'll get you through that Warden."], spawn: [{type: 'dart', n: 3, ang: 2}, {type: 'raider', n: 2, ang: -2}], cages: 4, rescue: 'wing3', help: 'wing2'},
   ],
   boss: {type: 'warden', name: 'THE WARDEN', warn: ['wing3', "That's the Warden. Its locks spin round - hit them when they come past!"], escort: 2},
-  outro: [['wing3', 'Free! Ziggy online. Scanners up - I\'ll tell you where to bite.'], ['rosie', 'All the pups are out. The squadron is complete!'], ['mittens', 'You let out ALL my prisoners?! Do you know how long it took to catch them?!']],
-  next: ['jungle', 'yarn'],
+  outro: [['wing3', "Free! Ziggy online. Scanners up - I'll tell you where to bite."], ['rosie', 'The squadron is complete!'], ['mittens', 'You let out my prisoners?! Do you know how long it took to catch them?!']],
+  next: {normal: 'jungle', secret: 'yarn'},
   joins: ['wing3'],
 },
 
 /* ================================================================ 3b */
+/* All rail. Ice spikes and three ice arches. SECRET: at the frozen
+   waterfall the canyon splits - the right-hand channel is the old frozen
+   river, narrow and full of ice, and it leads to the hard route (the Yarn
+   Nebula). The boss is met on the rail, which stops: the Snowball rolls
+   down the canyon at you and back - climb over it, plug its four vents,
+   then hit the core. */
 frost: {
   name: 'Frost Fang', planet: 'Brrr', n: 3, hard: true,
-  blurb: 'An ice planet. The Hiss are freezing its oceans solid to roll it out of orbit.',
-  ground: 'canyon', railEnd: 3500, arenaU: 4100,
+  blurb: 'An ice planet. The Hiss are freezing it into one big snowball.',
+  ground: 'canyon', railEnd: 3400, arena: false, railBossU: 3400, arenaU: 99999,
+  fork: {u0: 2000, u1: 2900, side: 1, off: 150, width: 30, say: ['wing3', 'The old frozen river! Ice everywhere - stay sharp.']},
   path: {a: [65, 38, 16], l: [400, 150, 60], p: [2, 1, 0]},
   width: u => 44 + 12 * Math.sin(u / 200) + 30 * S(u, 3150, 3450),
   rim: u => 110 + 20 * Math.sin(u / 400),
+  railTop: 58,
   groundParams: {wall: 22, steps: 5, mountains: 190, crag: 0.7},
   theme: {kind: 'day', haze: [0.86, 0.92, 0.98], zenith: [0.45, 0.62, 0.88], sun: [0.5, 0.35, -0.8], fog: [200, 1500], clouds: 0.6,
     strata: [0xdde8f2, 0xb8d0e8, 0xeef4fa, 0x9ab8d8, 0xcfe0f0, 0x88a8cc], sand: 0xf4f8fc, scrub: 0xd8e4f0, wet: 0x8ab0d0, top: 0xffffff,
     water: 0x6aa0c8, snow: true, ice: true},
   music: {rail: 'canyon', free: 'clearing', boss: 'boss'},
+  secret: {type: 'fork', need: 1, label: 'SECRET ROUTE', found: ['rosie', 'The frozen river comes out behind their lines - the hard route to the Yarn Nebula is open!']},
   obstacles: (lay, R) => [
     ...scatter(R, lay, 600, 1400, 90, (u, R) => lay.spire(u, (R() - 0.5) * 50, 5, 50 + R() * 40, 'ice')),
-    lay.arch(1650, 30, 14, 'ice'), lay.arch(1780, 36, 12, 'ice'), lay.arch(1900, 28, 14, 'ice'),
-    ...scatter(R, lay, 2300, 3000, 100, (u, R) => lay.spire(u, (R() - 0.5) * 40, 5, 70, 'ice')),
-    ...[[0.4, 150, 36, 160, 'ice'], [2.0, 320, 44, 200, 'ice'], [3.6, 240, 30, 130, 'ice'], [5.0, 380, 50, 220, 'ice']].map(([a, r, rad, h, look]) =>
-      lay.spireAt(lay.arenaX + Math.cos(a) * r, lay.arenaZ + Math.sin(a) * r, rad, h, look)),
+    lay.arch(1550, 30, 14, 'ice'), lay.arch(1680, 36, 12, 'ice'), lay.arch(1800, 28, 14, 'ice'),
+    ...scatter(R, lay, 2350, 3000, 110, (u, R) => lay.spire(u, (R() - 0.5) * 40, 5, 70, 'ice')),
+    ...lay.onFork(() => [lay.spire(2400, -8, 4, 60, 'ice'), lay.spire(2500, 9, 4, 70, 'ice'), lay.arch(2600, 24, 10, 'ice'), lay.spire(2700, -6, 4, 60, 'ice')]),
   ],
   briefing: [
     ['rosie', "Frost Fang. The Hiss are freezing the whole planet into one big snowball, to roll it out of orbit."],
     ['wing1', 'Snow! I love snow. I hate cold. I love snow.'],
-    ['rosie', "There's a pilot stranded down there, too. Ziggy. Find them."],
+    ['rosie', "There's a pilot stranded down there, too. Ziggy. Find them. And our maps show an old frozen river somewhere off to the right..."],
   ],
   script: A => {
     A.at(100, () => A.say('rosie', 'Ice spikes ahead. Weave!', 2.2));
@@ -273,21 +291,20 @@ frost: {
     A.at(700, () => { A.turret(1100, -1); A.turret(1150, 1); });
     A.at(900, () => A.say('wing3', "Is someone there? This is Ziggy. My ship's frozen to a glacier - but my guns still work!", 3.4));
     A.at(1100, () => { A.join('wing3'); A.swoop(3); A.pickup('ball', 1300, 0, 16); });
-    A.at(1400, () => A.say('rosie', 'Ice arches. Three of them. Stay low!', 2.4));
-    A.at(1500, () => A.pickup('gold', 1780, 0, 12));
-    A.at(2000, () => { A.formation(5, 2450); A.cross(2500, -1, 30); });
-    A.at(2300, () => { A.turret(2650, -1); A.turret(2700, 1); A.turret(2750, -1); A.pickup('bone', 2600, 0, 14); });
-    A.at(2700, () => { A.swoop(4); A.pickup('bomb', 2900, 0, 20); A.pickup('gold', 2950, 0, 50); });
-    A.at(3000, () => { A.formation(4, 3400); A.say('wing3', "There's something enormous rolling around the valley ahead...", 3); });
-    A.at(3200, () => A.pickup('gold', 3300, 30, 25));
+    A.at(1350, () => A.say('rosie', 'Ice arches. Three of them. Stay low!', 2.4));
+    A.at(1500, () => A.pickup('gold', 1680, 0, 12));
+    A.at(1850, () => A.say('wing3', "Look - the canyon splits up ahead. The right channel is the old frozen river. Tight, but it goes somewhere.", 3.6));
+    A.at(2100, () => { A.formation(5, 2500); A.cross(2550, -1, 30); }, 'main');
+    A.at(2300, () => { A.turret(2650, -1); A.turret(2700, 1); A.pickup('bone', 2600, 0, 14); }, 'main');
+    A.at(2150, () => { A.swoop(3); A.pickup('gold', 2450, 0, 20); }, 'alt');
+    A.at(2400, () => { A.turret(2700, -1); A.turret(2720, 1); A.pickup('bone', 2650, 0, 12); A.pickup('gold', 2800, 0, 40); }, 'alt');
+    A.at(2700, () => { A.swoop(4); A.pickup('bomb', 2900, 0, 20); });
+    A.at(3000, () => { A.formation(4, 3300); A.say('wing3', "Something enormous is rolling round the valley ahead... CLIMB if it comes at you!", 3.4); });
   },
-  waves: [
-    {say: ['wing3', 'Fighters from the ridges! Six of them.'], spawn: [{type: 'dart', n: 6}]},
-    {say: ['rosie', 'Raiders! They are diving at the squad!'], spawn: [{type: 'raider', n: 3, ang: 2}, {type: 'dart', n: 2, ang: -2}], help: 'wing3'},
-  ],
-  boss: {type: 'snowball', name: 'THE SNOWBALL', warn: ['wing3', 'Scanning... a giant ice ball with four cooling vents. Hit the vents!'], escort: 2},
+  waves: [],
+  boss: {type: 'snowball', name: 'THE SNOWBALL', warn: ['wing3', 'A giant ice ball with four cooling vents. Hit the vents - and get OVER it when it rolls at you!'], escort: 0},
   outro: [['wing3', 'The freezing has stopped. My ship has thawed. I would like a warm blanket.'], ['mittens', 'You MELTED my snowball? I was going to bowl with that planet!']],
-  next: ['jungle', 'yarn'],
+  next: {normal: 'jungle', secret: 'yarn'},
   joins: ['wing3'],
 },
 
@@ -332,51 +349,37 @@ jungle: {
   ],
   boss: {type: 'queen', name: 'QUEEN NIP', warn: ['wing3', "The catnip queen! Shoot the five petals and then the middle. Don't breathe in!"], escort: 2},
   outro: [['wing2', "I flew through ONE cloud and now everything is purple and I love everyone."], ['rosie', 'The catnip supply is cut off. The Hiss will be grumpy.'], ['mittens', 'My CATNIP. You monsters. Do you know what a cat is without catnip? A CAT.']],
-  next: ['moonfall'],
+  next: {normal: 'moonfall', secret: 'moonfall'},
 },
 
 /* ================================================================ 4b */
+/* All-range: a dogfight among the yarn balls, against the Alley Cats. */
 yarn: {
-  name: 'Yarn Nebula', planet: 'The Tangle', n: 4, hard: true,
+  name: 'Yarn Nebula', planet: 'The Tangle', n: 4, hard: true, start: 'arena',
   blurb: "A nebula strung with giant balls of yarn. The Alley Cats' home turf.",
-  ground: 'space', railEnd: 3200, arenaU: 3900, arenaR: 620, arenaLimit: 780,
-  path: {a: [70, 40, 0], l: [380, 160, 100], p: [1, 0, 0]},
+  ground: 'space', railEnd: 200, arenaU: 900, arenaR: 620, arenaLimit: 780,
+  path: {a: [0, 0, 0], l: [380, 160, 100], p: [0, 0, 0]},
   width: u => 66,
   railTop: 70, railFloor: -50, ceiling: 380, floor: -380,
   theme: {kind: 'space', nebula: [[0.55, 0.15, 0.45], [0.25, 0.10, 0.55]], sunColor: 0xffe0f0, sun: [0.4, 0.4, -0.8], fog: [500, 2400]},
-  music: {rail: 'space', free: 'clearing', boss: 'alley'},
+  music: {rail: 'space', free: 'alley', boss: 'alley'},
+  arenaPickups: [['gold', 1.0, 420, 100], ['gold', 2.9, 380, -160], ['gold', 5.0, 520, 40], ['ball', 0, 280, 10], ['bone', 3.8, 300, 0], ['bomb', 1.9, 350, -60]],
   obstacles: (lay, R) => [
-    ...scatter(R, lay, 300, 3100, 55, (u, R) => {
-      const off = (R() < 0.5 ? -1 : 1) * (15 + R() * 110), y = (R() - 0.5) * 130;
-      return lay.rock(u, R() < 0.15 ? (R() - 0.5) * 40 : off, R() < 0.15 ? (R() - 0.5) * 40 : y, 8 + R() * 20, 'yarn');
-    }),
-    ...Array.from({length: 14}, (_, i) => { const a = i * 2.39, r = 150 + (i * 53 % 380); return lay.rockAt(lay.arenaX + Math.cos(a) * r, (i % 5 - 2) * 70, lay.arenaZ + Math.sin(a) * r, 18 + (i % 4) * 8, 'yarn'); }),
+    ...Array.from({length: 40}, () => { const a = R() * 6.283, r = 120 + R() * 560; return lay.rockAt(lay.arenaX + Math.cos(a) * r, (R() - 0.5) * 520, lay.arenaZ + Math.sin(a) * r, 10 + R() * 26, 'yarn'); }),
   ],
   briefing: [
     ['rosie', 'The Yarn Nebula. Giant balls of yarn, as far as the scanners can see.'],
     ['wing3', "It's the hideout of the Alley Cats - the Hiss's ace squadron. Four of the best pilots Mittens has."],
     ['wing2', 'Aces, schmaces. I want a go at them.'],
-    ['rosie', "Be careful. They don't fly like the others."],
+    ['ace1', "Well, well. The Good Boys. Come to play with yarn?"],
   ],
-  script: A => {
-    A.at(100, () => A.say('wing3', 'Yarn balls ahead. Do NOT get tangled.', 2.4));
-    A.at(250, () => A.formation(4, 700));
-    A.at(600, () => { A.swoop(3); A.pickup('ball', 900, 0, 0); });
-    A.at(900, () => A.say('ace1', "Well, well. The Good Boys. Come to play with yarn?", 3));
-    A.at(1000, () => { A.formation(5, 1450); });
-    A.at(1300, () => { A.cross(1700, 1, 0); A.cross(1740, -1, 20); A.pickup('bone', 1600, 0, 0); });
-    A.at(1600, () => { A.say('ace2', "Hairball here. Hope you like scratches.", 2.6); A.swoop(4); });
-    A.at(1900, () => { A.formation(5, 2350); A.pickup('gold', 2100, 30, -30); });
-    A.at(2200, () => { A.cross(2600, -1, -10); A.pickup('gold', 2500, -40, 30); A.pickup('bomb', 2400, 0, 0); });
-    A.at(2600, () => { A.swoop(4); A.say('ace3', "Duchess. Charmed. Now hold still.", 2.4); });
-    A.at(2900, () => { A.say('ace4', "Tom here. Let's see what these pups have got.", 2.6); A.pickup('gold', 3000, 0, 50); });
-  },
   waves: [
-    {say: ['rosie', "Regular Hiss first - the aces are watching."], spawn: [{type: 'dart', n: 5}, {type: 'raider', n: 2, ang: 2.4}]},
+    {say: ['rosie', "Regular Hiss first - the aces are watching. And mind the mines."], spawn: [{type: 'dart', n: 5}, {type: 'raider', n: 2, ang: 2.4}, {type: 'mine', n: 6, ang: 0, dist: 350, spread: 0.25}]},
+    {say: ['ace2', "Hairball here. Let's see what you've got."], spawn: [{type: 'raider', n: 3, ang: -2}, {type: 'dart', n: 3, ang: 2}], help: 'wing2'},
   ],
   boss: {type: 'aces', name: 'THE ALLEY CATS', warn: ['ace1', "Enough warm-up. Alley Cats - let's teach these pups some manners!"], escort: 0},
   outro: [['ace1', "Grr. You got lucky, dogs. We'll see you at the Moon."], ['wing2', "We beat the ACES! Somebody write that down!"]],
-  next: ['moonfall'],
+  next: {normal: 'moonfall', secret: 'moonfall'},
 },
 
 /* ================================================================ 5 */
@@ -404,6 +407,7 @@ moonfall: {
     A.at(100, () => A.say('rosie', 'Debris field ahead. Get to the Moon, fast!', 2.6));
     A.at(250, () => A.formation(5, 700));
     A.at(600, () => { A.swoop(4); A.pickup('bone', 800, 0, 0); });
+    A.at(900, () => A.mines(1150, 8));
     A.at(1000, () => { A.formation(5, 1450); A.cross(1500, 1, 10); A.pickup('ball', 1300, 0, 10); });
     A.at(1400, () => { A.say('ace1', 'Told you we would see you here, pups!', 2.4); A.aces(2, 1900); });
     A.at(1800, () => { A.swoop(4); A.pickup('gold', 2000, -40, 20); A.pickup('bomb', 2100, 0, 0); });
@@ -413,7 +417,7 @@ moonfall: {
   waves: [],
   boss: {type: 'engines', name: 'THE MOON ENGINES', warn: ['rosie', 'Four engines! The clock is running!'], escort: 3, aces: 2},
   outro: [['rosie', "The engines are down - the Moon is back where it belongs!"], ['teddy', 'AWOOOOOO!'], ['mittens', "NO! My Moon! ...Fine. You want to play? Come to Scratchpost. Come and get me, dogs."]],
-  next: ['scratchpost'],
+  next: {normal: 'scratchpost', secret: 'scratchpost'},
 },
 
 /* ================================================================ 6 */
@@ -454,7 +458,7 @@ scratchpost: {
   waves: [],
   boss: {type: 'core', name: 'THE FORTRESS CORE', warn: ['wing3', "Four shield panels spinning round it. Break them, then the core!"], escort: 0},
   outro: [['rosie', "The core is down! Mittens' fortress has no shields!"], ['mittens', "You... you BROKE my house. You know what happens now? I come out myself."]],
-  next: ['lair'],
+  next: {normal: 'lair', secret: 'lair'},
 },
 
 /* ================================================================ 7 */
@@ -483,12 +487,15 @@ lair: {
     A.at(250, () => A.formation(5, 700));
     A.at(600, () => { A.swoop(4); A.pickup('ball', 800, 0, 0); });
     A.at(900, () => { A.aces(2, 1400); A.say('ace4', "Last chance to turn back, pups.", 2.4); });
-    A.at(1200, () => { A.formation(5, 1650); A.pickup('bone', 1400, 0, 0); A.pickup('bomb', 1500, 0, 10); });
+    A.at(1200, () => { A.formation(5, 1650); A.pickup('bone', 1400, 0, 0); A.pickup('bomb', 1500, 0, 10); A.mines(1550, 9); });
     A.at(1500, () => { A.aces(2, 2000); A.say('ace3', "The Emperor will not be disturbed.", 2.4); });
     A.at(1800, () => { A.swoop(4); A.pickup('gold', 2000, 0, 40); A.pickup('gold', 2100, -40, -20); });
     A.at(2100, () => { A.say('rosie', "That's her. That's ALL her. Good luck, {teddy}.", 2.8); A.pickup('gold', 2300, 40, 20); A.pickup('bone', 2350, 0, 0); });
   },
   waves: [],
+  /* On the hard route (two or more secrets found) the Alley Cats are
+     waiting for a rematch before Mittens. */
+  hardWaves: [{say: ['ace1', "Rematch time, pups! The Emperor's orders."], spawn: [{type: 'ace', n: 4, dist: 600, spread: 0.5}]}],
   boss: {type: 'mittens', name: 'EMPEROR MITTENS', warn: ['mittens', 'Shall we play a game? It is called: I swat, you fall.'], escort: 0},
   outro: [],
   ending: [
@@ -500,7 +507,7 @@ lair: {
     ['rosie', "Good Boy Squadron... you did it. You are, all of you, very good dogs."],
     ['teddy', "...So is there a snack now?"],
   ],
-  next: [],
+  next: {},
 },
 };
 
