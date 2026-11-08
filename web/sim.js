@@ -1408,8 +1408,11 @@ function allies(s, dt){
       a.x += f.x * 90 * dt; a.y += f.y * 90 * dt; a.z += f.z * 90 * dt;
     } else if(s.mode === 'rail'){
       // in formation: a slot behind and beside Teddy
+      // (it eases towards the slot at 2.5/s, which on its own trails the
+      // slot by speed / 2.5 - 30 m at 75 m/s, right beside the camera - so
+      // aim that much further on)
       const r = p.rail, sl = a.slot;
-      const u = r.u + sl[2], lim = halfW(u) - WALL_MARGIN;
+      const u = r.u + sl[2] + p.speed / 2.5, lim = halfW(u) - WALL_MARGIN;
       const q = railPoint(u, clamp(r.ox * 0.6 + sl[0], -lim, lim), Math.max(RAIL_FLOOR + 2, Math.min(RAIL_TOP, r.oy + sl[1])));
       const k = 1 - Math.exp(-2.5 * dt);
       a.x += (q.x - a.x) * k; a.y += (q.y - a.y) * k; a.z += (q.z - a.z) * k;

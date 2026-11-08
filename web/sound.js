@@ -11,7 +11,8 @@
 let AC = null, master = null, sfxBus = null, comp = null;
 // music/ beside this file, whichever page loads it (the Haunted House lives a folder down)
 const MUSIC_DIR = new URL('music/', import.meta.url).href;
-const MUSIC = {man: null, bufs: {}, loading: {}, cur: null, gain: null, want: null, duckUntil: 0, on: true, vol: 0.85};
+// the music sits under the effects (Jon: "the music is dominating the audio")
+const MUSIC = {man: null, bufs: {}, loading: {}, cur: null, gain: null, want: null, duckUntil: 0, on: true, vol: 0.5};
 let noiseBuf = null;
 
 export function soundOn(){ return !!AC && AC.state === 'running'; }
@@ -26,7 +27,7 @@ export function unlock(){
     comp.threshold.value = -14; comp.ratio.value = 4;
     master = AC.createGain(); master.gain.value = 0.9;
     master.connect(comp); comp.connect(AC.destination);
-    sfxBus = AC.createGain(); sfxBus.gain.value = 0.8; sfxBus.connect(master);
+    sfxBus = AC.createGain(); sfxBus.gain.value = 1.0; sfxBus.connect(master);
     const n = AC.sampleRate * 1.5;
     noiseBuf = AC.createBuffer(1, n, AC.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -217,9 +218,13 @@ export function sfx(key, pos, vol, pitch){
       break;
     }
     case 'laser': {
-      const d = out(pos, 0.16 * v);
-      tone(t, 'sawtooth', 1500 + Math.random() * 200, 220, 0.12, d, 0.8);
-      tone(t, 'square', 900, 120, 0.09, d, 0.3);
+      // your own gun: loud, and played at you, not at the ship 38 m in front
+      // of the camera (it was quiet and faded with the distance)
+      const d = out(null, 0.5 * v);
+      tone(t, 'sawtooth', 1500 + Math.random() * 200, 220, 0.13, d, 0.8);
+      tone(t, 'square', 900, 120, 0.1, d, 0.35);
+      tone(t, 'triangle', 2600, 600, 0.06, d, 0.4);     // a bright zap on the front
+      noise(t, 0.05, d, 'highpass', 3000, 0, 0.7);
       break;
     }
     case 'laserFar': {

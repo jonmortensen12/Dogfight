@@ -201,7 +201,11 @@ export class World {
     this.allyShips = new Map();
     this.parts = new Particles(this.low ? 2500 : 4500);
     scene.add(this.parts.points);
-    this.shotBeams = []; for(let i = 0; i < 120; i++) this.shotBeams.push(new Beam(scene, hot(0x60ff90, 2.2), 0.35));
+    // Teddy's lasers: fat green bolts with a glowing head, easy to follow
+    // from 38 m back through the narrow lens (were 0.35 m wide, 9 m long)
+    this.shotBeams = []; for(let i = 0; i < 120; i++) this.shotBeams.push(new Beam(scene, hot(0x60ff90, 2.8), 1.7));
+    const headMat = new THREE.SpriteMaterial({map: glow, color: hot(0x9affb8, 3.2), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
+    this.shotHeads = []; for(let i = 0; i < 120; i++){ const s = new THREE.Sprite(headMat); s.scale.set(6, 6, 1); s.visible = false; scene.add(s); this.shotHeads.push(s); }
     const boltMat = new THREE.SpriteMaterial({map: glow, color: hot(0xff5030, 2.6), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true});
     this.boltSprites = []; for(let i = 0; i < 140; i++){ const s = new THREE.Sprite(boltMat); s.scale.set(3.2, 3.2, 1); s.visible = false; scene.add(s); this.boltSprites.push(s); }
     this.boltTails = []; for(let i = 0; i < 140; i++) this.boltTails.push(new Beam(scene, hot(0xff4020, 1.6), 0.5));
@@ -497,11 +501,14 @@ export class World {
     for(const b of s.shots){
       if(i >= this.shotBeams.length) break;
       const B = this.shotBeams[i++];
-      const sp = Math.hypot(b.vx, b.vy, b.vz) || 1;
-      B.a.set(b.x - b.vx / sp * 9, b.y - b.vy / sp * 9, b.z - b.vz / sp * 9); B.b.set(b.x, b.y, b.z);
+      const sp = Math.hypot(b.vx, b.vy, b.vz) || 1, len = b.ally ? 12 : 20;
+      B.width = b.ally ? 0.9 : 1.7;      // wingmates' shots thinner, so yours stand out
+      B.a.set(b.x - b.vx / sp * len, b.y - b.vy / sp * len, b.z - b.vz / sp * len); B.b.set(b.x, b.y, b.z);
       B.mesh.visible = true; B.place(cam);
+      const H = this.shotHeads[i - 1];
+      H.visible = !b.ally; H.position.set(b.x, b.y, b.z);
     }
-    for(; i < this.shotBeams.length; i++) this.shotBeams[i].mesh.visible = false;
+    for(let j = i; j < this.shotBeams.length; j++){ this.shotBeams[j].mesh.visible = false; this.shotHeads[j].visible = false; }
     i = 0;
     for(const b of s.bolts){
       if(i >= this.boltSprites.length) break;

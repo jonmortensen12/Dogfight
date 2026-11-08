@@ -197,7 +197,10 @@ happen again). In the canyon a spire knocks you sideways, an arch down.
 
 **Lasers** fly 300 m/s × the speed setting (were 430), about four times
 the rail speed (SF64's: 3.3 times), and live 1.65 s so the range is the
-same. **Guns.** See FIRE above. Aim assist bends a tapped shot towards an
+same. They're drawn fat (1.7 m wide, 20 m long, a glowing head; the
+wingmates' thinner and headless so yours stand out) and the zap is loud
+and played at the listener, not at the ship 38 m in front of the camera.
+**Guns.** See FIRE above. Aim assist bends a tapped shot towards an
 enemy within 6.3° / 4.3° / 2.6° of the nose (Pup / Good Boy / Top Dog),
 leading it. Three bombs; the blue capsule gives two.
 
@@ -352,6 +355,9 @@ in; once it feels right it can become the game's own speed and go away.
 
 ## The music (`tools/music.py`)
 
+**Mix** (round 6, "the music is dominating the audio"): music at 0.5
+(was 0.85), effects bus at 1.0 (was 0.8), into the master compressor.
+
 Original pieces in the manner of a 90s console space shooter: a rock kit
 (synthesised kick, snare and hats), a synth bass jumping octaves in
 eighths, synth brass stabs, trumpets and horns on big leaping tunes, with
@@ -426,7 +432,9 @@ tools/samples.py` (once) then `python3 tools/music.py [name ...]`.
   the camera follows 78% of the ship's slide (SF64: 77.7%), so the ship
   moves about the screen; it leans a little the other way to the stick;
   it tilts 30% of the ship's roll (20% in space). Wingmates fly in from
-  behind, wide and high, so they don't pass through the lens.
+  behind, wide and high, so they don't pass through the lens. On the rail
+  they aim for their slot plus speed ÷ 2.5 m further on: easing towards
+  it at 2.5/s had left them trailing 30 m, right beside the camera.
 - **The camera** (rewritten 2026-11-08 after "a noticeable jump" in rolls
   and loops). Everything is smoothed as an offset from the ship, so the
   ship's own speed never makes the picture lag. On the rail it is the
