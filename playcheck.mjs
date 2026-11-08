@@ -213,6 +213,17 @@ ok(await pg.evaluate(() => document.querySelectorAll('.node.next').length === 1 
 await pg.click('.node[data-id="canyon"]');
 await pg.click('#launch');
 await pg.waitForSelector('#brief:not(.hide)');
+// the line on screen has a voice, and it is there to fetch and decode
+await pg.waitForFunction(() => window.__dog.voice.clipFor('rosie', 'x') !== undefined, null, {timeout: 5000});
+const said = await pg.evaluate(async () => {
+  const [who, text] = window.__dog.LEVELS.canyon.briefing[0];
+  const c = window.__dog.voice.clipFor(who, text);
+  if(!c) return 'no clip';
+  const a = await (await fetch(c.url)).arrayBuffer();
+  const b = await new OfflineAudioContext(1, 24000, 24000).decodeAudioData(a);
+  return b.duration.toFixed(1) + ' s (index says ' + c.dur + ')';
+});
+ok(/^\d/.test(said), `the briefing's first line is spoken by Rosie: ${said}`);
 const lines = [];
 for(let i = 0; i < 8; i++){
   if(await pg.isHidden('#brief')) break;

@@ -11,6 +11,7 @@
      ?auto=1        the computer flies (the checks use this) */
 import {newSim, step, autopilot, SKILLS} from './sim.js';
 import {LEVELS, START, ORDER, MAP, MEDALS} from './levels.js';
+import * as voice from './voice.js';
 import {CAST, WINGS, lineFor} from './cast.js';
 import {World} from './world.js';
 import {Hud, drawTeddy, face, nameOf, VOICE} from './hud.js';
@@ -58,6 +59,9 @@ function alliesFor(id, freePlay){
 
 const world = new World($('view'), {low: qs.get('low') === '1'});
 const hud = new Hud($('hud'));
+// the radio speaks: each line in its character's voice, through a cockpit radio
+hud.onQueue = (who, text) => voice.preload(who, text);
+hud.onLine = (who, text) => voice.say(who, text, true);
 const input = new Input(document.body);
 drawTeddy($('tface').getContext('2d'), 128);
 
@@ -65,7 +69,7 @@ let current = {id: qs.get('level') && LEVELS[qs.get('level')] ? qs.get('level') 
 let sim = newSim({level: current.id, skill: S.skill, style: S.style, pace: +S.pace, steer: S.steer, seed: +qs.get('seed') || 7});
 let state = 'title';
 const view = {target: null};
-window.__dog = {get sim(){ return sim; }, world, hud, input, get state(){ return state; }, get save(){ return G; }, LEVELS};
+window.__dog = {get sim(){ return sim; }, world, hud, input, voice, get state(){ return state; }, get save(){ return G; }, LEVELS};
 
 /* ---------- the option chips ---------- */
 function paintChips(){
@@ -162,6 +166,7 @@ function showFree(){
 /* ---------- the briefing: the radio, one line at a time ---------- */
 let briefLines = [], briefI = 0, briefDone = null;
 function brief(id, lines, then){
+  snd.unlock();      // the briefing talks, and it comes straight from a tap
   const L = LEVELS[id];
   briefLines = (lines || L.briefing || []).filter(([who]) => !who.startsWith('wing') || alliesFor(id, current.free).includes(who) || (L.joins || []).includes(who));
   briefI = 0; briefDone = then || (() => play());
@@ -178,11 +183,14 @@ function showBriefLine(){
   $('briefface').style.borderColor = VOICE[who] || '#ffb060';
   $('briefwho').textContent = nameOf(who); $('briefwho').style.color = VOICE[who] || '#ffb060';
   $('brieftext').textContent = lineFor(text);
+  voice.say(who, lineFor(text), false);
+  // and the next one, ready
+  if(briefLines[briefI + 1]) voice.preload(briefLines[briefI + 1][0], lineFor(briefLines[briefI + 1][1]));
   $('briefnext').textContent = briefI === briefLines.length - 1 ? (state === 'brief' && briefDone.ending ? 'DONE' : 'LAUNCH!') : 'NEXT';
   snd.sfx('click');
 }
 $('briefnext').onclick = () => { briefI++; if(briefI >= briefLines.length){ $('brief').classList.add('hide'); briefDone(); } else showBriefLine(); };
-$('briefskip').onclick = () => { $('brief').classList.add('hide'); briefDone(); };
+$('briefskip').onclick = () => { voice.hush(); $('brief').classList.add('hide'); briefDone(); };
 
 /* ---------- starting a level ---------- */
 async function play(from, carry){
@@ -220,7 +228,7 @@ function go(){
 }
 function pause(){ if(state !== 'play') return; state = 'pause'; screen('pause'); controls(false); }
 function resume(){ state = 'play'; screen(null); controls(true); }
-function quit(){ if(current.free) showFree(); else showMap(); }
+function quit(){ voice.hush(); if(current.free) showFree(); else showMap(); }
 
 /* ---------- the end of a level ---------- */
 function rankOf(st){

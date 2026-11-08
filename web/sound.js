@@ -380,7 +380,7 @@ export function music(want){
       }
     }
   }
-  const duck = performance.now() < MUSIC.duckUntil ? 0.35 : 1;
+  const duck = performance.now() < MUSIC.duckUntil ? 0.4 : 1;
   MUSIC.gain.gain.setTargetAtTime(MUSIC.vol * duck, now, 0.15);
 }
 
@@ -418,3 +418,41 @@ export function engine(speed, on){
   eng.o.frequency.setTargetAtTime(70 + k * 70, t, 0.2);
   eng.og.gain.setTargetAtTime(on ? 0.012 + k * 0.01 : 0, t, 0.15);
 }
+
+/* ---------- voices: the recorded radio lines (web/voice.js finds them) ---------- */
+const VOX = {bufs: new Map(), cur: null};
+/* Fetch and decode a clip, once; returns a promise of the buffer (or null). */
+export function loadVoice(url){
+  if(!AC) return Promise.resolve(null);
+  if(!VOX.bufs.has(url)){
+    VOX.bufs.set(url, fetch(url).then(r => r.ok ? r.arrayBuffer() : null)
+      .then(a => a && new Promise((res, rej) => AC.decodeAudioData(a, res, rej))).catch(() => null));
+    // keep the last forty or so
+    if(VOX.bufs.size > 40) VOX.bufs.delete(VOX.bufs.keys().next().value);
+  }
+  return VOX.bufs.get(url);
+}
+/* Say a clip: one voice at a time (a new line cuts the last), the music
+   dipped underneath. radio: through a little band-pass, like a cockpit radio. */
+export async function speak(url, radio){
+  if(!AC) return;
+  if(AC.state !== 'running'){ try { await AC.resume(); } catch(e){} }
+  const want = VOX.want = url;
+  const buf = await loadVoice(url);
+  if(!buf || VOX.want !== want || !soundOn()) return;
+  stopVoice();
+  const t = AC.currentTime, src = AC.createBufferSource(), g = AC.createGain();
+  src.buffer = buf; g.gain.value = 1.15;
+  let head = g;
+  if(radio){
+    const hp = AC.createBiquadFilter(), lp = AC.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 260; lp.type = 'lowpass'; lp.frequency.value = 4200;
+    src.connect(hp); hp.connect(lp); lp.connect(g);
+  } else src.connect(g);
+  head.connect(master);
+  src.start(t);
+  VOX.cur = src;
+  MUSIC.duckUntil = Math.max(MUSIC.duckUntil, performance.now() + buf.duration * 1000 + 250);
+  src.onended = () => { if(VOX.cur === src) VOX.cur = null; };
+}
+export function stopVoice(){ if(VOX.cur){ try { VOX.cur.stop(); } catch(e){} VOX.cur = null; } }

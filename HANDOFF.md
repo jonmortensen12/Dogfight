@@ -353,6 +353,47 @@ also means wider turns. It is `s.pace` in the sim and can change mid-game.
 simcheck plays Good Boy at 1.25× and 1.5× as well as 1×. It is there to dial
 in; once it feels right it can become the game's own speed and go away.
 
+## The voices (`tools/voice.py`)
+
+Everyone on the radio speaks (round 7), the same way as Dry Fly's guide:
+Kokoro text-to-speech (Apache-2.0, so the clips can ship), rendered offline
+into `web/voice/<id>.mp3` (about 3 MB for all 214 lines).
+
+- `tools/lines.mjs` gathers every line: briefings, outros, the ending,
+  the level scripts (run with a stand-in that records), wave and boss
+  calls, the cast's lines, and lines written in `sim.js`/`main.js`. Lines
+  built from numbers ("Radar buoy down - 3 of 8", "Golden bone! 2 of 5")
+  are captions only.
+- A clip's id is FNV-1a of `who|text` with the names filled in
+  (`web/voiceid.js`, shared by the tool and the game). Change a line or
+  rename a pet and that line is silent until `voice.py` runs again; it
+  then makes the new clips and deletes ones nothing uses. `simcheck`
+  fails while any line has no clip.
+- **Casting** (`VOICES` in `tools/voice.py`; pitch is shifted afterwards
+  with the tempo kept, above 1 younger/smaller):
+
+  | Who | Kokoro voice | Speed, pitch | Why |
+  |---|---|---|---|
+  | Teddy | am_puck | 1.05, 1.05 | playful, young, goofy |
+  | Biscuit | am_michael | 1.0, 1.0 | warm and steady |
+  | Pepper | af_bella | 1.12, 1.03 | quick, excitable hothead |
+  | Ziggy | bm_fable | 1.02, 1.0 | crisp British know-it-all |
+  | Rosie | bf_emma | 1.02, 1.03 | clear British mission control (a corgi) |
+  | Professor Hops | bm_george | 0.92, 0.97 | the old professor (Dry Fly's guide) |
+  | Emperor Mittens | af_nicole | 0.9, 0.95 | breathy, sly, purring |
+  | Scratch | am_fenrir | 0.95, 0.93 | gruff ace leader |
+  | Hairball | am_eric | 1.08, 1.08 | nasal, comic |
+  | Duchess | bf_isabella | 0.95, 1.0 | posh |
+  | Tom | am_onyx | 0.92, 0.96 | deep and cool |
+
+  A new pet needs a row there; `voice.py` refuses to run without one.
+  To recast someone: change their row, then `voice.py --who wing2`.
+- **In the game** (`web/voice.js`, `speak` in `sound.js`): a line is
+  fetched when it is queued and spoken when its caption comes up, through
+  a light band-pass in flight (a cockpit radio) and clean in briefings.
+  One voice at a time; the caption stays up as long as the voice; the
+  music dips to 40% under it.
+
 ## The music (`tools/music.py`)
 
 **Mix** (round 6, "the music is dominating the audio"): music at 0.5

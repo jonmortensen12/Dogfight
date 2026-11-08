@@ -12,6 +12,7 @@
    4. The moves (loops, U-turns, the charge and lock, barrel rolls).
    5. The same seed plays the same game.
    Exits non-zero if anything that should hold does not. Takes a minute or two. */
+import {readFileSync} from 'fs';
 import {newSim, step, autopilot, SKILLS, LOOP, CHARGE, checkpointU} from './web/sim.js';
 import {setLevel, height, halfW, railFrame, railPoint, archUnder, spireR, spireTop, hitObstacle, RAIL_END, RAIL_TOP, RAIL_FLOOR, WALL_MARGIN, GROUND} from './web/terrain.js';
 import * as T from './web/terrain.js';
@@ -229,6 +230,17 @@ console.log('\nSquads, drops and the checkpoint');
   const cps = ORDER.map(id => [id, checkpointU(LEVELS[id])]);
   ok(cps.every(([id, u]) => LEVELS[id].start === 'arena' ? !u : u > 0 && !(LEVELS[id].fork && u > LEVELS[id].fork.u0 - 250 && u < LEVELS[id].fork.u1 + 150)),
     `checkpoints: ${cps.map(([id, u]) => id + ' ' + (u || '-')).join(', ')}`);
+}
+
+console.log('\nVoices');
+{
+  // every line the cast says has a clip (tools/voice.py makes them)
+  const {execFileSync} = await import('child_process');
+  const all = JSON.parse(execFileSync('node', [new URL('./tools/lines.mjs', import.meta.url).pathname, '--json'], {encoding: 'utf8'}));
+  let index = {};
+  try { index = JSON.parse(readFileSync(new URL('./web/voice/index.json', import.meta.url), 'utf8')); } catch(e){}
+  const none = all.filter(l => !index[l.id]);
+  ok(!none.length, `every radio line has a voice (${all.length - none.length} of ${all.length})` + (none.length ? ` - run python3 tools/voice.py; missing e.g. ${none[0].who}: "${none[0].text}"` : ''));
 }
 
 console.log('\nSame seed, same game');

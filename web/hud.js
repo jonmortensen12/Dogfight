@@ -173,6 +173,7 @@ export class Hud {
     // a new line cuts in only if it is more urgent than a chat
     this.queue.push({who, text, dur, t: 0});
     if(this.queue.length > 3) this.queue.shift();
+    if(this.onQueue) this.onQueue(who, text);      // start fetching its voice
   }
   show(text, sub, dur){ this.banner = {text, sub, t: 0, dur: dur || 2.5}; }
 
@@ -441,7 +442,12 @@ export class Hud {
   }
 
   drawRadio(g, W, H, dt, font, view){
-    if(!this.radio && this.queue.length) this.radio = this.queue.shift();
+    if(!this.radio && this.queue.length){
+      this.radio = this.queue.shift();
+      // spoken: the caption stays up as long as the voice
+      const said = this.onLine ? this.onLine(this.radio.who, this.radio.text) : 0;
+      if(said) this.radio.dur = Math.max(this.radio.dur || 0, said + 0.5);
+    }
     const r = this.radio;
     if(!r) return;
     r.t += dt;

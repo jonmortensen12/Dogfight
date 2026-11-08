@@ -28,10 +28,11 @@ the repo root.
 ## Before shipping
 
 ```
-node simcheck.mjs    # the simulation, headless: every rail flyable, the computer flies every planet (Good Boy and Pup), the story beats, the moves (~10 s)
+node simcheck.mjs    # the simulation, headless: every rail flyable, the computer flies every planet (Good Boy and Pup), the story beats, the moves, every line voiced (~4 min)
 node playcheck.mjs   # the page in Chromium: tilt maths, buttons, camera, the adventure flow, every planet loads (~3 min)
 node tools/serve.mjs # play it on a laptop at http://localhost:8080/ (arrows, Space, Shift)
 python3 tools/samples.py && python3 tools/music.py   # re-render web/music/ after changing a piece
+python3 tools/voice.py --models DIR   # voice new or changed radio lines (simcheck says which are missing)
 ```
 
 `web/sim.js` decides everything that happens and draws nothing;
